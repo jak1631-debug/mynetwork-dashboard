@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Executive Inventory Dashboard - ExportPWS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- SheetJS (xlsx) - Local with CDN fallback -->
+  <script src="xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Executive Header -->
+    <header class="app-header">
+      <div class="header-main">
+        <div class="brand">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+              <path d="M7 10l3-3 3 3 4-4"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title-badge">
+              <h1>Executive Inventory & Asset Dashboard</h1>
+              <span class="badge-status">PWS Analytics</span>
+            </div>
+            <p class="subtitle">ระบบวิเคราะห์และติดตามสถานะพัสดุและคลังสินค้า (สรุปผลรวม QTY และคอลัมน์หลักสีเหลือง)</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div id="file-status-badge" class="file-status-badge hidden">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span id="active-filename">ExportPWS.xlsx</span>
+            <button id="change-file-btn" class="btn-link" title="เปลี่ยนหรืออัปโหลดไฟล์ใหม่">เปลี่ยนไฟล์</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Upload & Drop Zone (Visible initially or when changing file) -->
+    <section id="upload-container" class="upload-section">
+      <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="ลากไฟล์ Excel หรือ CSV มาวางที่นี่">
+        <input type="file" id="file-input" accept=".xlsx, .xls, .csv" class="visually-hidden">
+        
+        <div class="drop-zone-content">
+          <div class="upload-icon-wrapper">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <h2 class="upload-title">ลากไฟล์ Excel (.xlsx, .csv) มาวางที่นี่</h2>
+          <p class="upload-desc">รองรับไฟล์ <strong>ExportPWS.xlsx</strong> หรือไฟล์รายการพัสดุอื่นๆ</p>
+          <div class="upload-actions">
+            <button type="button" id="browse-btn" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+              </svg>
+              เลือกไฟล์จากเครื่อง
+            </button>
+            <button type="button" id="auto-load-btn" class="btn btn-secondary" title="พยายามโหลดไฟล์ ExportPWS.xlsx ในเครื่องโดยตรง">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+              </svg>
+              โหลดไฟล์ ExportPWS.xlsx ทันที
+            </button>
+          </div>
+          <span class="file-types-hint">รองรับไฟล์: <strong>.XLSX</strong>, <strong>.XLS</strong>, <strong>.CSV</strong></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error Alert Box -->
+    <div id="error-alert" class="alert alert-danger hidden" role="alert">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <span id="error-message">เกิดข้อผิดพลาดในการอ่านไฟล์</span>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-spinner" class="loading-container hidden">
+      <div class="spinner"></div>
+      <p id="loading-text">กำลังประมวลผลข้อมูลด้วย SheetJS...</p>
+    </div>
+
+    <!-- Dashboard Content (Visible after file loaded) -->
+    <main id="dashboard-content" class="dashboard-content hidden">
+
+      <!-- 1. Executive Filter Panel -->
+      <section class="card filter-card">
+        <div class="filter-header">
+          <div class="filter-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            <h2>ตัวกรองข้อมูลผู้บริหาร (Executive Filters)</h2>
+          </div>
+          <div class="filter-controls-right">
+            <span id="filter-matching-count" class="filter-stats">แสดง 0 จาก 0 รายการ</span>
+            <button id="reset-filters-btn" class="btn btn-sm btn-ghost" title="ล้างเงื่อนไขตัวกรองทั้งหมด">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                <path d="M3 3v5h5"></path>
+              </svg>
+              ล้างตัวกรอง
+            </button>
+          </div>
+        </div>
+
+        <div class="filters-grid">
+          <!-- Filter 1: LOCATION_NAME -->
+          <div class="filter-group">
+            <label for="filter-location-name">
+              <span>สถานที่ / สาขา (LOCATION_NAME)</span>
+              <span id="location-name-count" class="label-hint">0 สาขา</span>
+            </label>
+            <div class="select-wrapper">
+              <select id="filter-location-name" class="form-control">
+                <option value="">ทั้งหมด (ทุกสาขา / สถานที่)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Filter 2: LOCATION_TYPE -->
+          <div class="filter-group">
+            <label for="filter-location-type">
+              <span>ประเภทสถานที่ (LOCATION_TYPE)</span>
+              <span id="location-type-count" class="label-hint">0 ประเภท</span>
+            </label>
+            <div class="select-wrapper">
+              <select id="filter-location-type" class="form-control">
+                <option value="">ทั้งหมด (ทุกประเภทสถานที่)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Filter 3: ARTICLE_DESC (Partial match) -->
+          <div class="filter-group filter-group-grow">
+            <label for="filter-article-desc">
+              <span>ค้นหาชื่อสินค้า / พัสดุ (ARTICLE_DESC)</span>
+              <span class="label-hint">พิมพ์ค้นหาบางส่วนของคำได้</span>
+            </label>
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="filter-article-desc" class="form-control" placeholder="เช่น CABLE, MODEM, ROUTER, ONU, แบตเตอรี่...">
+              <button id="clear-search-btn" class="clear-input-btn hidden" title="ล้างคำค้นหา">&times;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. KPI Summary Cards (4 กล่อง) -->
+      <section class="kpi-grid">
+        <!-- KPI 1: Total QTY -->
+        <div class="kpi-card kpi-emerald">
+          <div class="kpi-content">
+            <div class="kpi-label">ผลรวมจำนวนทั้งหมด (Total QTY)</div>
+            <div class="kpi-value-row">
+              <span id="kpi-total-qty" class="kpi-number">0</span>
+              <span class="kpi-unit">ชิ้น</span>
+            </div>
+            <div class="kpi-sub">ผลรวมสต็อกพัสดุตามเงื่อนไขตัวกรอง</div>
+          </div>
+          <div class="kpi-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+          </div>
+        </div>
+
+        <!-- KPI 2: Total Reserved QTY -->
+        <div class="kpi-card kpi-amber">
+          <div class="kpi-content">
+            <div class="kpi-label">จำนวนที่ถูกจอง (Reserved QTY)</div>
+            <div class="kpi-value-row">
+              <span id="kpi-reserved-qty" class="kpi-number">0</span>
+              <span class="kpi-unit">ชิ้น</span>
+            </div>
+            <div class="kpi-sub" id="kpi-reserved-percent">0% ของจำนวนทั้งหมด</div>
+          </div>
+          <div class="kpi-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+        </div>
+
+        <!-- KPI 3: Total Records -->
+        <div class="kpi-card kpi-blue">
+          <div class="kpi-content">
+            <div class="kpi-label">จำนวนรายการที่พบ (Records)</div>
+            <div class="kpi-value-row">
+              <span id="kpi-total-records" class="kpi-number">0</span>
+              <span class="kpi-unit">รายการ</span>
+            </div>
+            <div class="kpi-sub" id="kpi-records-sub">จากข้อมูลทั้งหมด 0 รายการ</div>
+          </div>
+          <div class="kpi-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+          </div>
+        </div>
+
+        <!-- KPI 4: Active Locations -->
+        <div class="kpi-card kpi-purple">
+          <div class="kpi-content">
+            <div class="kpi-label">จำนวนสถานที่ / สาขา (Locations)</div>
+            <div class="kpi-value-row">
+              <span id="kpi-active-locations" class="kpi-number">0</span>
+              <span class="kpi-unit">แห่ง</span>
+            </div>
+            <div class="kpi-sub" id="kpi-articles-count">มีสินค้าไม่ซ้ำ 0 รายการ</div>
+          </div>
+          <div class="kpi-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Detail Data Table (Columns สีเหลือง) -->
+      <section class="card table-card">
+        <div class="table-card-header">
+          <div class="table-title-group">
+            <div class="yellow-column-badge" title="แสดงเฉพาะหัวข้อที่ไฮไลต์สีเหลืองในไฟล์ Excel (22 คอลัมน์)">
+              <span class="yellow-dot"></span>
+              คอลัมน์สีเหลือง (22 หัวข้อ)
+            </div>
+            <h2>ตารางแสดงรายละเอียดเฉพาะรายการ</h2>
+            <span id="table-record-count-badge" class="counter-badge">0 รายการ</span>
+          </div>
+
+          <div class="table-actions">
+            <!-- Rows per page selector -->
+            <div class="rows-per-page">
+              <label for="rows-per-page-select">แสดงหน้าละ:</label>
+              <select id="rows-per-page-select" class="form-control-sm">
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </div>
+
+            <!-- Export Filtered Button -->
+            <button id="export-csv-btn" class="btn btn-sm btn-outline">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              ส่งออก CSV (ตามตัวกรอง)
+            </button>
+          </div>
+        </div>
+
+        <!-- Yellow Column Chips Bar -->
+        <div class="yellow-columns-info">
+          <span class="info-tag">หัวข้อคอลัมน์สีเหลืองที่นำมาแสดง:</span>
+          <div class="chips-container" id="yellow-chips-list">
+            <!-- Dynamic chips -->
+          </div>
+        </div>
+
+        <!-- Table Responsive Container -->
+        <div class="table-responsive" tabindex="0">
+          <table id="executive-table" class="data-table">
+            <thead id="executive-table-head">
+              <!-- Dynamically populated yellow column <th> -->
+            </thead>
+            <tbody id="executive-table-body">
+              <!-- Dynamically populated <tr> -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Bar -->
+        <div class="pagination-bar">
+          <div class="pagination-info" id="pagination-info">
+            แสดงแถวที่ 0 - 0 จาก 0 รายการ
+          </div>
+          <div class="pagination-controls">
+            <button id="btn-first-page" class="btn-pagination" title="หน้าแรก">&laquo;</button>
+            <button id="btn-prev-page" class="btn-pagination" title="หน้าก่อนหน้า">&lsaquo; ก่อนหน้า</button>
+            <span class="page-indicator" id="page-indicator">หน้า 1 / 1</span>
+            <button id="btn-next-page" class="btn-pagination" title="หน้าถัดไป">ถัดไป &rsaquo;</button>
+            <button id="btn-last-page" class="btn-pagination" title="หน้าสุดท้าย">&raquo;</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Executive Dashboard &bull; ระบบประมวลผลข้อมูลในเบราว์เซอร์ด้วย SheetJS</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
