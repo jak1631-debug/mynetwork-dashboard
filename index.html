@@ -15,6 +15,8 @@
       document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
     }
   </script>
+  <!-- Embedded Default Data (Zero CORS / file:// safe) -->
+  <script src="data.js"></script>
 </head>
 <body>
   <!-- Global Drag & Drop Overlay -->
@@ -68,7 +70,8 @@
               <polyline points="14 2 14 8 20 8"></polyline>
             </svg>
             <span id="active-filename">ExportPWS.xlsx</span>
-            <span id="file-custom-tag" class="tag-custom hidden">กำหนดเอง</span>
+            <span id="file-custom-tag" class="tag-custom hidden">บันทึกไว้ในเครื่อง</span>
+            <button id="reset-default-data-btn" class="btn-link hidden" title="กลับไปใช้ข้อมูล ExportPWS.xlsx เริ่มต้น">รีเซ็ตไฟล์เริ่มต้น</button>
           </div>
 
           <!-- Prominent Update Button -->

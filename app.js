@@ -1,11 +1,11 @@
 /**
  * Executive Inventory & Asset Dashboard (PWS Analytics)
  * Features:
- * 1. Auto-loads ExportPWS.xlsx on page load into the Dashboard view directly
- * 2. Prominent "อัปเดตไฟล์ ExportPWS.xlsx" button in Header to replace data from computer
- * 3. Persists updated file in IndexedDB so custom updates remain after refresh
- * 4. Full Drag & Drop overlay across entire window
- * 5. Executive Filters, 4 KPI Cards, 22 Yellow Columns Table with high-performance pagination
+ * 1. Immediate instant load on startup (from IndexedDB if previously uploaded, or embedded data.js)
+ *    - Completely safe for file:/// protocol (Zero CORS errors) and Netlify
+ * 2. Remembers and persists user-uploaded Excel files in IndexedDB permanently
+ * 3. Prominent "อัปเดตไฟล์ ExportPWS.xlsx" button in Header
+ * 4. Executive Filters, 4 KPI Cards, 22 Yellow Columns Table with high-performance pagination
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const fileStatusBadge = document.getElementById('file-status-badge');
   const activeFileName = document.getElementById('active-filename');
   const fileCustomTag = document.getElementById('file-custom-tag');
+  const resetDefaultDataBtn = document.getElementById('reset-default-data-btn');
 
   const errorAlert = document.getElementById('error-alert');
   const errorMessage = document.getElementById('error-message');
@@ -73,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // State
   let allRows = [];                  // All data rows
   let filteredRows = [];             // Filtered rows
-  let activeDisplayCols = [];        // 22 yellow column definitions
+  let activeDisplayCols = [];        // Column definitions
   let colIndexMap = {};              // Map: colName -> columnIndex
   let currentPage = 1;
   let rowsPerPage = 25;
@@ -84,32 +85,35 @@ document.addEventListener('DOMContentLoaded', () => {
   renderYellowChips();
 
   // ==========================================
-  // Auto-load on startup
+  // Startup: Auto-load Data with Priority
   // ==========================================
   initDashboard();
 
   async function initDashboard() {
-    showLoading(true, 'กำลังโหลดข้อมูล ExportPWS.xlsx เข้าสู่แดชบอร์ด...');
+    showLoading(true, 'กำลังโหลดข้อมูลเข้าสู่แดชบอร์ด...');
 
     try {
-      // 1. Check if user previously saved a custom file in IndexedDB
-      const savedData = await loadFromIndexedDB();
-      if (savedData && savedData.buffer && savedData.name) {
-        parseWorkbookBuffer(savedData.buffer, savedData.name, true);
-        showToast(`โหลดข้อมูลที่บันทึกไว้ล่าสุด (${savedData.name}) สำเร็จ`);
+      // Priority 1: Check if user previously uploaded and saved a custom file in IndexedDB
+      const saved = await loadFromIndexedDB();
+      if (saved && saved.name && saved.headers && saved.rows && saved.rows.length > 0) {
+        applyParsedData(saved.headers, saved.rows, saved.name, true);
+        showToast(`โหลดข้อมูลล่าสุดที่เคยบันทึกไว้ (${saved.name}) เรียบร้อย`);
         return;
       }
 
-      // 2. Otherwise auto-load default ExportPWS.xlsx
+      // Priority 2: Use embedded default data (data.js) - Works 100% on file:/// and web with 0 latency
+      if (window.DEFAULT_PWS_DATA && window.DEFAULT_PWS_DATA.headers && window.DEFAULT_PWS_DATA.rows) {
+        applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false);
+        return;
+      }
+
+      // Priority 3: Fetch ExportPWS.xlsx over HTTP (if hosted on web server / Netlify)
       await fetchDefaultFile('ExportPWS.xlsx');
 
     } catch (err) {
-      console.warn('Auto-load notice:', err);
+      console.warn('Dashboard init notice:', err);
       showLoading(false);
-      // If running via file:// protocol where fetch is blocked by browser security
-      showError(
-        'กำลังเปิดผ่าน Local File (file://) : กรุณากดปุ่ม "อัปเดตไฟล์ ExportPWS.xlsx" ด้านบนขวาเพื่อเลือกไฟล์จากเครื่อง หรือเปิดผ่าน Netlify'
-      );
+      showError('ไม่สามารถโหลดข้อมูลอัตโนมัติได้ กรุณากดปุ่ม "อัปเดตไฟล์ ExportPWS.xlsx" ด้านบนขวา');
       if (errorActionBtn) {
         errorActionBtn.classList.remove('hidden');
         errorActionBtn.onclick = () => fileInput.click();
@@ -127,15 +131,71 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // Event Listeners: Update File & Drag & Drop
+  // Core: Apply Data to State & UI
   // ==========================================
 
-  // Click Update Button
+  function applyParsedData(headers, dataRows, filename, isCustom = false) {
+    colIndexMap = {};
+    headers.forEach((h, idx) => {
+      colIndexMap[String(h).trim().toUpperCase()] = idx;
+    });
+
+    // Match 22 yellow columns
+    activeDisplayCols = [];
+    YELLOW_COLUMNS.forEach((yCol) => {
+      if (colIndexMap[yCol] !== undefined) {
+        activeDisplayCols.push({
+          name: yCol,
+          index: colIndexMap[yCol]
+        });
+      }
+    });
+
+    // Fallback if no yellow column matches
+    if (activeDisplayCols.length === 0) {
+      headers.forEach((h, idx) => {
+        activeDisplayCols.push({ name: h || `Column ${idx + 1}`, index: idx });
+      });
+    }
+
+    allRows = dataRows;
+
+    // Populate Filters
+    populateFilterOptions();
+
+    // Reset Filter Inputs
+    filterLocationName.value = '';
+    filterLocationType.value = '';
+    filterArticleDesc.value = '';
+    clearSearchBtn.classList.add('hidden');
+    currentPage = 1;
+
+    // Header Status
+    activeFileName.textContent = filename;
+    if (isCustom) {
+      fileCustomTag.classList.remove('hidden');
+      if (resetDefaultDataBtn) resetDefaultDataBtn.classList.remove('hidden');
+    } else {
+      fileCustomTag.classList.add('hidden');
+      if (resetDefaultDataBtn) resetDefaultDataBtn.classList.add('hidden');
+    }
+
+    dashboardContent.classList.remove('hidden');
+    hideError();
+
+    // Calculate KPIs and render
+    applyFilters();
+    showLoading(false);
+  }
+
+  // ==========================================
+  // File Upload & Update Handling
+  // ==========================================
+
   updateFileBtn.addEventListener('click', () => {
     fileInput.click();
   });
 
-  // File chosen via picker
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -143,7 +203,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Global Window Drag & Drop
+  if (resetDefaultDataBtn) {
+    resetDefaultDataBtn.addEventListener('click', async () => {
+      if (confirm('ต้องการรีเซ็ตกลับไปใช้ข้อมูล ExportPWS.xlsx เริ่มต้นใช่หรือไม่?')) {
+        await clearIndexedDB();
+        if (window.DEFAULT_PWS_DATA && window.DEFAULT_PWS_DATA.headers) {
+          applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false);
+          showToast('รีเซ็ตกลับเป็นไฟล์ ExportPWS.xlsx เริ่มต้นแล้ว');
+        } else {
+          location.reload();
+        }
+      }
+    });
+  }
+
+  // Global Drag & Drop Overlay
   window.addEventListener('dragenter', (e) => {
     e.preventDefault();
     dragCounter++;
@@ -187,16 +261,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    showLoading(true, `กำลังอัปเดตข้อมูลจาก "${file.name}"...`);
+    showLoading(true, `กำลังอ่านและประมวลผล "${file.name}"...`);
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const buffer = e.target.result;
-      parseWorkbookBuffer(buffer, file.name, true);
+    reader.onload = async (e) => {
+      try {
+        const buffer = e.target.result;
+        const parsed = parseWorkbookBuffer(buffer, file.name, true);
 
-      // Save to IndexedDB so it persists across reloads
-      saveToIndexedDB(file.name, buffer);
-      showToast(`อัปเดตข้อมูลจาก "${file.name}" สำเร็จเรียบร้อย!`);
+        if (parsed && parsed.headers && parsed.rows) {
+          // Save parsed data into IndexedDB for instant reload in future visits
+          await saveToIndexedDB(file.name, parsed.headers, parsed.rows);
+          showToast(`บันทึกข้อมูลจาก "${file.name}" แล้ว (ระบบจะจำข้อมูลนี้ไว้ตลอด)`);
+        }
+      } catch (err) {
+        showLoading(false);
+        showError(`เกิดข้อผิดพลาดในการอ่านไฟล์: ${err.message}`);
+      }
     };
 
     reader.onerror = () => {
@@ -207,103 +288,45 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsArrayBuffer(file);
   }
 
-  // ==========================================
-  // Core: Parse & Process File
-  // ==========================================
-
   function parseWorkbookBuffer(arrayBuffer, filename, isCustom = false) {
-    try {
-      if (typeof XLSX === 'undefined') {
-        throw new Error('ไม่พบไลบรารี SheetJS (XLSX)');
-      }
-
-      const data = new Uint8Array(arrayBuffer);
-      const workbook = XLSX.read(data, {
-        type: 'array',
-        cellDates: true,
-        dense: true
-      });
-
-      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-        throw new Error('ไม่พบ Sheet ข้อมูลในไฟล์นี้');
-      }
-
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-
-      if (!worksheet || !worksheet['!ref']) {
-        throw new Error(`Sheet แรก "${firstSheetName}" ไม่มีข้อมูล`);
-      }
-
-      // Convert to 2D array
-      const raw2D = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: '',
-        blankrows: false
-      });
-
-      if (!raw2D || raw2D.length < 2) {
-        throw new Error('ไฟล์นี้มีข้อมูลไม่เพียงพอ หรือไม่มีแถวข้อมูล');
-      }
-
-      const headers = raw2D[0].map((h) => String(h || '').trim());
-      colIndexMap = {};
-      headers.forEach((h, idx) => {
-        colIndexMap[h.toUpperCase()] = idx;
-      });
-
-      // Match yellow columns
-      activeDisplayCols = [];
-      YELLOW_COLUMNS.forEach((yCol) => {
-        if (colIndexMap[yCol] !== undefined) {
-          activeDisplayCols.push({
-            name: yCol,
-            index: colIndexMap[yCol]
-          });
-        }
-      });
-
-      // Fallback if not matching yellow columns (e.g. another custom file)
-      if (activeDisplayCols.length === 0) {
-        headers.forEach((h, idx) => {
-          activeDisplayCols.push({ name: h || `Column ${idx + 1}`, index: idx });
-        });
-      }
-
-      // Store data rows (from row 1 onwards)
-      allRows = raw2D.slice(1);
-
-      // Populate filter dropdowns with unique values
-      populateFilterOptions();
-
-      // Reset filters and render
-      filterLocationName.value = '';
-      filterLocationType.value = '';
-      filterArticleDesc.value = '';
-      clearSearchBtn.classList.add('hidden');
-      currentPage = 1;
-
-      // Update UI Header
-      activeFileName.textContent = filename;
-      if (isCustom) {
-        fileCustomTag.classList.remove('hidden');
-      } else {
-        fileCustomTag.classList.add('hidden');
-      }
-
-      dashboardContent.classList.remove('hidden');
-      hideError();
-
-      // Apply initial filter (all)
-      applyFilters();
-
-      showLoading(false);
-
-    } catch (err) {
-      showLoading(false);
-      console.error(err);
-      showError(`เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถแปลงไฟล์ได้'}`);
+    if (typeof XLSX === 'undefined') {
+      throw new Error('ไม่พบไลบรารี SheetJS (XLSX)');
     }
+
+    const data = new Uint8Array(arrayBuffer);
+    const workbook = XLSX.read(data, {
+      type: 'array',
+      cellDates: true,
+      dense: true
+    });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('ไม่พบ Sheet ข้อมูลในไฟล์นี้');
+    }
+
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    if (!worksheet || !worksheet['!ref']) {
+      throw new Error(`Sheet แรก "${firstSheetName}" ไม่มีข้อมูล`);
+    }
+
+    const raw2D = XLSX.utils.sheet_to_json(worksheet, {
+      header: 1,
+      defval: '',
+      blankrows: false
+    });
+
+    if (!raw2D || raw2D.length < 2) {
+      throw new Error('ไฟล์นี้มีข้อมูลไม่เพียงพอ หรือไม่มีแถวข้อมูล');
+    }
+
+    const headers = raw2D[0].map((h) => String(h || '').trim());
+    const dataRows = raw2D.slice(1);
+
+    applyParsedData(headers, dataRows, filename, isCustom);
+
+    return { headers, rows: dataRows };
   }
 
   // ==========================================
@@ -329,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Populate LOCATION_NAME dropdown
+    // Populate LOCATION_NAME
     const sortedLocNames = Array.from(uniqueLocNames).sort((a, b) => a.localeCompare(b, 'th'));
     let locOptions = '<option value="">ทั้งหมด (ทุกสาขา / สถานที่)</option>';
     sortedLocNames.forEach((name) => {
@@ -338,7 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterLocationName.innerHTML = locOptions;
     locationNameCount.textContent = `${sortedLocNames.length.toLocaleString('th-TH')} สาขา`;
 
-    // Populate LOCATION_TYPE dropdown
+    // Populate LOCATION_TYPE
     const sortedLocTypes = Array.from(uniqueLocTypes).sort();
     let typeOptions = '<option value="">ทั้งหมด (ทุกประเภทสถานที่)</option>';
     sortedLocTypes.forEach((type) => {
@@ -368,13 +391,13 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
 
-      // 1. LOCATION_NAME filter
+      // 1. LOCATION_NAME
       if (targetLocName && locNameIdx !== undefined) {
         const locVal = String(row[locNameIdx] || '').trim().toLowerCase();
         if (locVal !== targetLocName) continue;
       }
 
-      // 2. LOCATION_TYPE filter
+      // 2. LOCATION_TYPE
       if (targetLocType && locTypeIdx !== undefined) {
         const typeVal = String(row[locTypeIdx] || '').trim().toLowerCase();
         if (typeVal !== targetLocType) continue;
@@ -386,7 +409,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!artVal.includes(targetArticleQuery)) continue;
       }
 
-      // Row matches all filters
       filteredRows.push(row);
 
       // Accumulate KPIs
@@ -421,34 +443,30 @@ document.addEventListener('DOMContentLoaded', () => {
       articlesCount: matchingArticles.size
     });
 
-    // Update Filter counter badge
+    // Update Badges
     filterMatchingCount.textContent = `แสดง ${filteredRows.length.toLocaleString('th-TH')} จาก ${allRows.length.toLocaleString('th-TH')} รายการ`;
     tableRecordCountBadge.textContent = `${filteredRows.length.toLocaleString('th-TH')} รายการ`;
 
-    // Render table
+    // Render Table
     renderTableHeader();
     renderTablePage();
   }
 
   function updateKPIs(data) {
-    // KPI 1: Total QTY
     kpiTotalQty.textContent = Math.round(data.totalQty).toLocaleString('th-TH');
 
-    // KPI 2: Reserved QTY & %
     kpiReservedQty.textContent = Math.round(data.reservedQty).toLocaleString('th-TH');
     const reservedPercent = data.totalQty > 0
       ? ((data.reservedQty / data.totalQty) * 100).toFixed(1)
       : '0';
     kpiReservedPercent.textContent = `${reservedPercent}% ของจำนวนทั้งหมด`;
 
-    // KPI 3: Total Records & % of overall
     kpiTotalRecords.textContent = data.totalRecords.toLocaleString('th-TH');
     const recordsPercent = data.allRecordsCount > 0
       ? ((data.totalRecords / data.allRecordsCount) * 100).toFixed(1)
       : '100';
     kpiRecordsSub.textContent = `คิดเป็น ${recordsPercent}% จากทั้งหมด ${data.allRecordsCount.toLocaleString('th-TH')} รายการ`;
 
-    // KPI 4: Active Locations & Unique Articles
     kpiActiveLocations.textContent = data.activeLocationsCount.toLocaleString('th-TH');
     kpiArticlesCount.textContent = `พบสินค้าไม่ซ้ำ ${data.articlesCount.toLocaleString('th-TH')} รายการ`;
   }
@@ -499,7 +517,6 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFilters();
   });
 
-  // Table pagination listeners
   rowsPerPageSelect.addEventListener('change', (e) => {
     rowsPerPage = parseInt(e.target.value, 10) || 25;
     currentPage = 1;
@@ -539,7 +556,7 @@ document.addEventListener('DOMContentLoaded', () => {
   exportCsvBtn.addEventListener('click', exportFilteredDataToCSV);
 
   // ==========================================
-  // Render: Yellow Column Chips & Table
+  // Table Rendering
   // ==========================================
 
   function renderYellowChips() {
@@ -691,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getDB() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
+      const req = indexedDB.open(DB_NAME, 2);
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -703,12 +720,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function saveToIndexedDB(filename, buffer) {
+  async function saveToIndexedDB(filename, headers, rows) {
     try {
       const db = await getDB();
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      store.put({ name: filename, buffer: buffer, updatedAt: Date.now() }, 'active_file');
+      store.put({
+        name: filename,
+        headers: headers,
+        rows: rows,
+        updatedAt: Date.now()
+      }, 'active_data');
     } catch (e) {
       console.warn('IndexedDB save failed:', e);
     }
@@ -720,7 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return new Promise((resolve) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
-        const req = store.get('active_file');
+        const req = store.get('active_data');
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => resolve(null);
       });
@@ -729,8 +751,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function clearIndexedDB() {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.delete('active_data');
+    } catch (e) {
+      console.warn('IndexedDB clear failed:', e);
+    }
+  }
+
   // ==========================================
-  // UI Helpers: Toast & Notifications
+  // UI Helpers
   // ==========================================
 
   function showToast(message, type = 'success') {
