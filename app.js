@@ -1,10 +1,11 @@
 /**
  * Executive Inventory & Asset Dashboard (PWS Analytics)
  * Features:
- * 1. Filter: LOCATION_NAME, LOCATION_TYPE, ARTICLE_DESC (partial text search)
- * 2. 4 KPI Cards: Total QTY, Total Reserved QTY, Total Records, Active Locations
- * 3. Detail Data Table: Filtered records showing the 22 yellow columns with high-performance pagination
- * 4. Export Filtered Records to CSV (with UTF-8 BOM for Thai Excel support)
+ * 1. Auto-loads ExportPWS.xlsx on page load into the Dashboard view directly
+ * 2. Prominent "อัปเดตไฟล์ ExportPWS.xlsx" button in Header to replace data from computer
+ * 3. Persists updated file in IndexedDB so custom updates remain after refresh
+ * 4. Full Drag & Drop overlay across entire window
+ * 5. Executive Filters, 4 KPI Cards, 22 Yellow Columns Table with high-performance pagination
  */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,22 +17,24 @@ document.addEventListener('DOMContentLoaded', () => {
     'RESERVED_QTY', 'RESERVED_RTF_QTY', 'RESERVED_QUOTA', 'CREATED_DATE', 'OID', 'TITLE'
   ];
 
+  const DB_NAME = 'PWS_DASHBOARD_DB';
+  const STORE_NAME = 'pws_file_store';
+
   // DOM Elements
-  const dropZone = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
-  const browseBtn = document.getElementById('browse-btn');
-  const autoLoadBtn = document.getElementById('auto-load-btn');
-  const uploadContainer = document.getElementById('upload-container');
+  const updateFileBtn = document.getElementById('update-file-btn');
+  const fileStatusBadge = document.getElementById('file-status-badge');
+  const activeFileName = document.getElementById('active-filename');
+  const fileCustomTag = document.getElementById('file-custom-tag');
+
   const errorAlert = document.getElementById('error-alert');
   const errorMessage = document.getElementById('error-message');
+  const errorActionBtn = document.getElementById('error-action-btn');
   const loadingSpinner = document.getElementById('loading-spinner');
   const loadingText = document.getElementById('loading-text');
   const dashboardContent = document.getElementById('dashboard-content');
-
-  // Header status
-  const fileStatusBadge = document.getElementById('file-status-badge');
-  const activeFileName = document.getElementById('active-filename');
-  const changeFileBtn = document.getElementById('change-file-btn');
+  const dragDropOverlay = document.getElementById('drag-drop-overlay');
+  const toastContainer = document.getElementById('toast-container');
 
   // Filters
   const filterLocationName = document.getElementById('filter-location-name');
@@ -68,189 +71,112 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnLastPage = document.getElementById('btn-last-page');
 
   // State
-  let allRows = [];                  // All data objects
-  let filteredRows = [];             // Filtered data objects
-  let activeDisplayCols = [];        // Column definitions to display
-  let colIndexMap = {};              // Map: colName -> columnIndex in raw row
+  let allRows = [];                  // All data rows
+  let filteredRows = [];             // Filtered rows
+  let activeDisplayCols = [];        // 22 yellow column definitions
+  let colIndexMap = {};              // Map: colName -> columnIndex
   let currentPage = 1;
   let rowsPerPage = 25;
   let searchDebounceTimer = null;
+  let dragCounter = 0;
 
-  // Initialize Yellow Chips bar
+  // Initialize Yellow Chips Bar
   renderYellowChips();
 
   // ==========================================
-  // Event Listeners: File Upload & Drag & Drop
+  // Auto-load on startup
   // ==========================================
+  initDashboard();
 
-  browseBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    fileInput.click();
-  });
+  async function initDashboard() {
+    showLoading(true, 'กำลังโหลดข้อมูล ExportPWS.xlsx เข้าสู่แดชบอร์ด...');
 
-  dropZone.addEventListener('click', () => {
-    fileInput.click();
-  });
-
-  dropZone.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      fileInput.click();
-    }
-  });
-
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) processFile(file);
-  });
-
-  changeFileBtn.addEventListener('click', () => {
-    uploadContainer.classList.remove('hidden');
-    uploadContainer.scrollIntoView({ behavior: 'smooth' });
-  });
-
-  // Direct Auto-load Button for ExportPWS.xlsx
-  autoLoadBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    tryFetchLocalFile('ExportPWS.xlsx');
-  });
-
-  // Drag & Drop
-  ['dragenter', 'dragover'].forEach((eventName) => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dropZone.classList.add('dragover');
-    });
-  });
-
-  ['dragleave', 'dragend'].forEach((eventName) => {
-    dropZone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!dropZone.contains(e.relatedTarget)) {
-        dropZone.classList.remove('dragover');
+    try {
+      // 1. Check if user previously saved a custom file in IndexedDB
+      const savedData = await loadFromIndexedDB();
+      if (savedData && savedData.buffer && savedData.name) {
+        parseWorkbookBuffer(savedData.buffer, savedData.name, true);
+        showToast(`โหลดข้อมูลที่บันทึกไว้ล่าสุด (${savedData.name}) สำเร็จ`);
+        return;
       }
-    });
-  });
 
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropZone.classList.remove('dragover');
-    const files = e.dataTransfer?.files;
-    if (files && files.length > 0) {
-      processFile(files[0]);
+      // 2. Otherwise auto-load default ExportPWS.xlsx
+      await fetchDefaultFile('ExportPWS.xlsx');
+
+    } catch (err) {
+      console.warn('Auto-load notice:', err);
+      showLoading(false);
+      // If running via file:// protocol where fetch is blocked by browser security
+      showError(
+        'กำลังเปิดผ่าน Local File (file://) : กรุณากดปุ่ม "อัปเดตไฟล์ ExportPWS.xlsx" ด้านบนขวาเพื่อเลือกไฟล์จากเครื่อง หรือเปิดผ่าน Netlify'
+      );
+      if (errorActionBtn) {
+        errorActionBtn.classList.remove('hidden');
+        errorActionBtn.onclick = () => fileInput.click();
+      }
     }
-  });
-
-  // ==========================================
-  // Event Listeners: Filters & Table Controls
-  // ==========================================
-
-  filterLocationName.addEventListener('change', () => {
-    currentPage = 1;
-    applyFilters();
-  });
-
-  filterLocationType.addEventListener('change', () => {
-    currentPage = 1;
-    applyFilters();
-  });
-
-  filterArticleDesc.addEventListener('input', (e) => {
-    const val = e.target.value.trim();
-    if (val) {
-      clearSearchBtn.classList.remove('hidden');
-    } else {
-      clearSearchBtn.classList.add('hidden');
-    }
-
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = setTimeout(() => {
-      currentPage = 1;
-      applyFilters();
-    }, 250);
-  });
-
-  clearSearchBtn.addEventListener('click', () => {
-    filterArticleDesc.value = '';
-    clearSearchBtn.classList.add('hidden');
-    currentPage = 1;
-    applyFilters();
-    filterArticleDesc.focus();
-  });
-
-  resetFiltersBtn.addEventListener('click', () => {
-    filterLocationName.value = '';
-    filterLocationType.value = '';
-    filterArticleDesc.value = '';
-    clearSearchBtn.classList.add('hidden');
-    currentPage = 1;
-    applyFilters();
-  });
-
-  rowsPerPageSelect.addEventListener('change', (e) => {
-    rowsPerPage = parseInt(e.target.value, 10) || 25;
-    currentPage = 1;
-    renderTablePage();
-  });
-
-  // Pagination buttons
-  btnFirstPage.addEventListener('click', () => {
-    if (currentPage > 1) {
-      currentPage = 1;
-      renderTablePage();
-    }
-  });
-
-  btnPrevPage.addEventListener('click', () => {
-    if (currentPage > 1) {
-      currentPage--;
-      renderTablePage();
-    }
-  });
-
-  btnNextPage.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
-    if (currentPage < totalPages) {
-      currentPage++;
-      renderTablePage();
-    }
-  });
-
-  btnLastPage.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
-    if (currentPage < totalPages) {
-      currentPage = totalPages;
-      renderTablePage();
-    }
-  });
-
-  // Export CSV
-  exportCsvBtn.addEventListener('click', exportFilteredDataToCSV);
-
-  // ==========================================
-  // Core: Parse & Process File
-  // ==========================================
-
-  function tryFetchLocalFile(filename) {
-    showLoading(true, `กำลังอ่านไฟล์ ${filename}...`);
-    fetch(filename)
-      .then((res) => {
-        if (!res.ok) throw new Error('ไม่สามารถอ่านไฟล์ได้ทาง HTTP (หากเปิดแบบ file:// ให้ลากไฟล์มาวาง)');
-        return res.arrayBuffer();
-      })
-      .then((buf) => {
-        parseWorkbookBuffer(buf, filename);
-      })
-      .catch((err) => {
-        showLoading(false);
-        showError(`ไม่สามารถโหลดอัตโนมัติได้: ${err.message}. กรุณาลากไฟล์ ${filename} มาวางบนกล่องด้านบนแทนครับ`);
-      });
   }
 
-  function processFile(file) {
+  async function fetchDefaultFile(filename) {
+    const res = await fetch(filename);
+    if (!res.ok) {
+      throw new Error(`HTTP Error ${res.status}: ไม่สามารถอ่าน ${filename} ได้`);
+    }
+    const buf = await res.arrayBuffer();
+    parseWorkbookBuffer(buf, filename, false);
+  }
+
+  // ==========================================
+  // Event Listeners: Update File & Drag & Drop
+  // ==========================================
+
+  // Click Update Button
+  updateFileBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  // File chosen via picker
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handleUserUploadedFile(file);
+    }
+  });
+
+  // Global Window Drag & Drop
+  window.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+      dragDropOverlay.classList.remove('hidden');
+    }
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      dragDropOverlay.classList.add('hidden');
+    }
+  });
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    dragDropOverlay.classList.add('hidden');
+
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleUserUploadedFile(files[0]);
+    }
+  });
+
+  function handleUserUploadedFile(file) {
     hideError();
     const validExtensions = ['.xlsx', '.xls', '.csv'];
     const fileName = file.name.toLowerCase();
@@ -261,20 +187,31 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    showLoading(true, `กำลังประมวลผล "${file.name}" ด้วย SheetJS...`);
+    showLoading(true, `กำลังอัปเดตข้อมูลจาก "${file.name}"...`);
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      parseWorkbookBuffer(e.target.result, file.name);
+      const buffer = e.target.result;
+      parseWorkbookBuffer(buffer, file.name, true);
+
+      // Save to IndexedDB so it persists across reloads
+      saveToIndexedDB(file.name, buffer);
+      showToast(`อัปเดตข้อมูลจาก "${file.name}" สำเร็จเรียบร้อย!`);
     };
+
     reader.onerror = () => {
       showLoading(false);
       showError('ไม่สามารถอ่านไฟล์ได้ กรุณาลองใหม่อีกครั้ง');
     };
+
     reader.readAsArrayBuffer(file);
   }
 
-  function parseWorkbookBuffer(arrayBuffer, filename) {
+  // ==========================================
+  // Core: Parse & Process File
+  // ==========================================
+
+  function parseWorkbookBuffer(arrayBuffer, filename, isCustom = false) {
     try {
       if (typeof XLSX === 'undefined') {
         throw new Error('ไม่พบไลบรารี SheetJS (XLSX)');
@@ -346,17 +283,21 @@ document.addEventListener('DOMContentLoaded', () => {
       clearSearchBtn.classList.add('hidden');
       currentPage = 1;
 
-      // Update UI state
+      // Update UI Header
       activeFileName.textContent = filename;
-      fileStatusBadge.classList.remove('hidden');
-      uploadContainer.classList.add('hidden');
+      if (isCustom) {
+        fileCustomTag.classList.remove('hidden');
+      } else {
+        fileCustomTag.classList.add('hidden');
+      }
+
       dashboardContent.classList.remove('hidden');
+      hideError();
 
       // Apply initial filter (all)
       applyFilters();
 
       showLoading(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err) {
       showLoading(false);
@@ -484,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     filterMatchingCount.textContent = `แสดง ${filteredRows.length.toLocaleString('th-TH')} จาก ${allRows.length.toLocaleString('th-TH')} รายการ`;
     tableRecordCountBadge.textContent = `${filteredRows.length.toLocaleString('th-TH')} รายการ`;
 
-    // Render table with current page
+    // Render table
     renderTableHeader();
     renderTablePage();
   }
@@ -511,6 +452,91 @@ document.addEventListener('DOMContentLoaded', () => {
     kpiActiveLocations.textContent = data.activeLocationsCount.toLocaleString('th-TH');
     kpiArticlesCount.textContent = `พบสินค้าไม่ซ้ำ ${data.articlesCount.toLocaleString('th-TH')} รายการ`;
   }
+
+  // ==========================================
+  // Filter Event Listeners
+  // ==========================================
+
+  filterLocationName.addEventListener('change', () => {
+    currentPage = 1;
+    applyFilters();
+  });
+
+  filterLocationType.addEventListener('change', () => {
+    currentPage = 1;
+    applyFilters();
+  });
+
+  filterArticleDesc.addEventListener('input', (e) => {
+    const val = e.target.value.trim();
+    if (val) {
+      clearSearchBtn.classList.remove('hidden');
+    } else {
+      clearSearchBtn.classList.add('hidden');
+    }
+
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      currentPage = 1;
+      applyFilters();
+    }, 250);
+  });
+
+  clearSearchBtn.addEventListener('click', () => {
+    filterArticleDesc.value = '';
+    clearSearchBtn.classList.add('hidden');
+    currentPage = 1;
+    applyFilters();
+    filterArticleDesc.focus();
+  });
+
+  resetFiltersBtn.addEventListener('click', () => {
+    filterLocationName.value = '';
+    filterLocationType.value = '';
+    filterArticleDesc.value = '';
+    clearSearchBtn.classList.add('hidden');
+    currentPage = 1;
+    applyFilters();
+  });
+
+  // Table pagination listeners
+  rowsPerPageSelect.addEventListener('change', (e) => {
+    rowsPerPage = parseInt(e.target.value, 10) || 25;
+    currentPage = 1;
+    renderTablePage();
+  });
+
+  btnFirstPage.addEventListener('click', () => {
+    if (currentPage > 1) {
+      currentPage = 1;
+      renderTablePage();
+    }
+  });
+
+  btnPrevPage.addEventListener('click', () => {
+    if (currentPage > 1) {
+      currentPage--;
+      renderTablePage();
+    }
+  });
+
+  btnNextPage.addEventListener('click', () => {
+    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
+    if (currentPage < totalPages) {
+      currentPage++;
+      renderTablePage();
+    }
+  });
+
+  btnLastPage.addEventListener('click', () => {
+    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
+    if (currentPage < totalPages) {
+      currentPage = totalPages;
+      renderTablePage();
+    }
+  });
+
+  exportCsvBtn.addEventListener('click', exportFilteredDataToCSV);
 
   // ==========================================
   // Render: Yellow Column Chips & Table
@@ -543,7 +569,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalRecords = filteredRows.length;
     const totalPages = Math.ceil(totalRecords / rowsPerPage) || 1;
 
-    // Constrain currentPage
     if (currentPage > totalPages) currentPage = totalPages;
     if (currentPage < 1) currentPage = 1;
 
@@ -551,7 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const endIdx = Math.min(startIdx + rowsPerPage, totalRecords);
     const pageRows = filteredRows.slice(startIdx, endIdx);
 
-    // Update Pagination UI
     if (totalRecords === 0) {
       paginationInfo.textContent = 'ไม่พบข้อมูลที่ตรงกับเงื่อนไขตัวกรอง';
       pageIndicator.textContent = 'หน้า 0 / 0';
@@ -577,7 +601,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnNextPage.disabled = currentPage === totalPages;
     btnLastPage.disabled = currentPage === totalPages;
 
-    // Build Table Body rows
     const tbodyFragment = document.createDocumentFragment();
 
     pageRows.forEach((row, rIdx) => {
@@ -624,7 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // Export Filtered Data to CSV (UTF-8 BOM)
+  // Export CSV
   // ==========================================
 
   function exportFilteredDataToCSV() {
@@ -649,7 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
       csvLines.push(line.join(','));
     });
 
-    // Add UTF-8 BOM (\uFEFF) so Excel opens Thai characters correctly
     const csvContent = '\uFEFF' + csvLines.join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -664,8 +686,71 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
-  // Helpers
+  // IndexedDB Persistence Helpers
   // ==========================================
+
+  function getDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function saveToIndexedDB(filename, buffer) {
+    try {
+      const db = await getDB();
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put({ name: filename, buffer: buffer, updatedAt: Date.now() }, 'active_file');
+    } catch (e) {
+      console.warn('IndexedDB save failed:', e);
+    }
+  }
+
+  async function loadFromIndexedDB() {
+    try {
+      const db = await getDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get('active_file');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ==========================================
+  // UI Helpers: Toast & Notifications
+  // ==========================================
+
+  function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+      <span>${escapeHtml(message)}</span>
+    `;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(8px)';
+      toast.style.transition = 'all 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  }
 
   function escapeHtml(str) {
     if (typeof str !== 'string') return String(str);
@@ -689,7 +774,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function showError(msg) {
     errorMessage.textContent = msg;
     errorAlert.classList.remove('hidden');
-    errorAlert.scrollIntoView({ behavior: 'smooth' });
   }
 
   function hideError() {
