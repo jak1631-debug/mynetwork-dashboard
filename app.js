@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const updateFileBtn = document.getElementById('update-file-btn');
   const fileStatusBadge = document.getElementById('file-status-badge');
   const activeFileName = document.getElementById('active-filename');
+  const activeFileDate = document.getElementById('active-filedate');
   const fileCustomTag = document.getElementById('file-custom-tag');
   const resetDefaultDataBtn = document.getElementById('reset-default-data-btn');
 
@@ -60,9 +61,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const tableHead = document.getElementById('executive-table-head');
   const tableBody = document.getElementById('executive-table-body');
   const tableRecordCountBadge = document.getElementById('table-record-count-badge');
-  const yellowChipsList = document.getElementById('yellow-chips-list');
   const rowsPerPageSelect = document.getElementById('rows-per-page-select');
   const exportCsvBtn = document.getElementById('export-csv-btn');
+  const exportBtnText = document.getElementById('export-btn-text');
 
   const paginationInfo = document.getElementById('pagination-info');
   const pageIndicator = document.getElementById('page-indicator');
@@ -81,9 +82,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let searchDebounceTimer = null;
   let dragCounter = 0;
 
-  // Initialize Yellow Chips Bar
-  renderYellowChips();
-
   // ==========================================
   // Startup: Auto-load Data with Priority
   // ==========================================
@@ -96,14 +94,14 @@ document.addEventListener('DOMContentLoaded', () => {
       // Priority 1: Check if user previously uploaded and saved a custom file in IndexedDB
       const saved = await loadFromIndexedDB();
       if (saved && saved.name && saved.headers && saved.rows && saved.rows.length > 0) {
-        applyParsedData(saved.headers, saved.rows, saved.name, true);
+        applyParsedData(saved.headers, saved.rows, saved.name, true, saved.fileDate || 'บันทึกไว้ในเครื่อง');
         showToast(`โหลดข้อมูลล่าสุดที่เคยบันทึกไว้ (${saved.name}) เรียบร้อย`);
         return;
       }
 
       // Priority 2: Use embedded default data (data.js) - Works 100% on file:/// and web with 0 latency
       if (window.DEFAULT_PWS_DATA && window.DEFAULT_PWS_DATA.headers && window.DEFAULT_PWS_DATA.rows) {
-        applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false);
+        applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false, '17/11/2026 21:34 น.');
         return;
       }
 
@@ -127,14 +125,14 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error(`HTTP Error ${res.status}: ไม่สามารถอ่าน ${filename} ได้`);
     }
     const buf = await res.arrayBuffer();
-    parseWorkbookBuffer(buf, filename, false);
+    parseWorkbookBuffer(buf, filename, false, '17/11/2026 21:34 น.');
   }
 
   // ==========================================
   // Core: Apply Data to State & UI
   // ==========================================
 
-  function applyParsedData(headers, dataRows, filename, isCustom = false) {
+  function applyParsedData(headers, dataRows, filename, isCustom = false, fileDate = '') {
     colIndexMap = {};
     headers.forEach((h, idx) => {
       colIndexMap[String(h).trim().toUpperCase()] = idx;
@@ -170,8 +168,12 @@ document.addEventListener('DOMContentLoaded', () => {
     clearSearchBtn.classList.add('hidden');
     currentPage = 1;
 
-    // Header Status
+    // Header Status & Date
     activeFileName.textContent = filename;
+    if (activeFileDate && fileDate) {
+      activeFileDate.textContent = `ข้อมูล ณ วันที่: ${fileDate}`;
+    }
+
     if (isCustom) {
       fileCustomTag.classList.remove('hidden');
       if (resetDefaultDataBtn) resetDefaultDataBtn.classList.remove('hidden');
@@ -208,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm('ต้องการรีเซ็ตกลับไปใช้ข้อมูล ExportPWS.xlsx เริ่มต้นใช่หรือไม่?')) {
         await clearIndexedDB();
         if (window.DEFAULT_PWS_DATA && window.DEFAULT_PWS_DATA.headers) {
-          applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false);
+          applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false, '17/11/2026 21:34 น.');
           showToast('รีเซ็ตกลับเป็นไฟล์ ExportPWS.xlsx เริ่มต้นแล้ว');
         } else {
           location.reload();
@@ -263,16 +265,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     showLoading(true, `กำลังอ่านและประมวลผล "${file.name}"...`);
 
+    // Format file date
+    const d = file.lastModified ? new Date(file.lastModified) : new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const formattedDate = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())} น.`;
+
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const buffer = e.target.result;
-        const parsed = parseWorkbookBuffer(buffer, file.name, true);
+        const parsed = parseWorkbookBuffer(buffer, file.name, true, formattedDate);
 
         if (parsed && parsed.headers && parsed.rows) {
-          // Save parsed data into IndexedDB for instant reload in future visits
-          await saveToIndexedDB(file.name, parsed.headers, parsed.rows);
-          showToast(`บันทึกข้อมูลจาก "${file.name}" แล้ว (ระบบจะจำข้อมูลนี้ไว้ตลอด)`);
+          // Save parsed data & date into IndexedDB for instant reload in future visits
+          await saveToIndexedDB(file.name, parsed.headers, parsed.rows, formattedDate);
+          showToast(`บันทึกข้อมูลจาก "${file.name}" (${formattedDate}) เรียบร้อยแล้ว`);
         }
       } catch (err) {
         showLoading(false);
@@ -288,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.readAsArrayBuffer(file);
   }
 
-  function parseWorkbookBuffer(arrayBuffer, filename, isCustom = false) {
+  function parseWorkbookBuffer(arrayBuffer, filename, isCustom = false, fileDate = '') {
     if (typeof XLSX === 'undefined') {
       throw new Error('ไม่พบไลบรารี SheetJS (XLSX)');
     }
@@ -324,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const headers = raw2D[0].map((h) => String(h || '').trim());
     const dataRows = raw2D.slice(1);
 
-    applyParsedData(headers, dataRows, filename, isCustom);
+    applyParsedData(headers, dataRows, filename, isCustom, fileDate);
 
     return { headers, rows: dataRows };
   }
@@ -443,9 +450,12 @@ document.addEventListener('DOMContentLoaded', () => {
       articlesCount: matchingArticles.size
     });
 
-    // Update Badges
+    // Update Badges & Export Button
     filterMatchingCount.textContent = `แสดง ${filteredRows.length.toLocaleString('th-TH')} จาก ${allRows.length.toLocaleString('th-TH')} รายการ`;
     tableRecordCountBadge.textContent = `${filteredRows.length.toLocaleString('th-TH')} รายการ`;
+    if (exportBtnText) {
+      exportBtnText.textContent = `ส่งออกข้อมูลเป็น CSV (${filteredRows.length.toLocaleString('th-TH')} รายการ)`;
+    }
 
     // Render Table
     renderTableHeader();
@@ -558,18 +568,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // Table Rendering
   // ==========================================
-
-  function renderYellowChips() {
-    yellowChipsList.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-    YELLOW_COLUMNS.forEach((col) => {
-      const chip = document.createElement('span');
-      chip.className = 'chip';
-      chip.textContent = col;
-      fragment.appendChild(chip);
-    });
-    yellowChipsList.appendChild(fragment);
-  }
 
   function renderTableHeader() {
     let thHtml = '<tr><th class="col-row-num">#</th>';
@@ -700,6 +698,8 @@ document.addEventListener('DOMContentLoaded', () => {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+
+    showToast(`ส่งออกข้อมูล CSV เรียบร้อยแล้ว (${filteredRows.length.toLocaleString('th-TH')} รายการ)`);
   }
 
   // ==========================================
@@ -720,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function saveToIndexedDB(filename, headers, rows) {
+  async function saveToIndexedDB(filename, headers, rows, fileDate = '') {
     try {
       const db = await getDB();
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -729,6 +729,7 @@ document.addEventListener('DOMContentLoaded', () => {
         name: filename,
         headers: headers,
         rows: rows,
+        fileDate: fileDate,
         updatedAt: Date.now()
       }, 'active_data');
     } catch (e) {
