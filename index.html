@@ -140,16 +140,19 @@
         </div>
 
         <div class="filters-grid">
-          <!-- Filter 1: LOCATION_NAME -->
+          <!-- Filter 1: LOCATION_CODE (Partial match search) -->
           <div class="filter-group">
-            <label for="filter-location-name">
-              <span>สถานที่ / สาขา (LOCATION_NAME)</span>
-              <span id="location-name-count" class="label-hint">0 สาขา</span>
+            <label for="filter-location-code">
+              <span>รหัสสถานที่ / สาขา (LOCATION_CODE)</span>
+              <span class="label-hint">พิมพ์ค้นหาบางส่วนของคำได้</span>
             </label>
-            <div class="select-wrapper">
-              <select id="filter-location-name" class="form-control">
-                <option value="">ทั้งหมด (ทุกสาขา / สถานที่)</option>
-              </select>
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="filter-location-code" class="form-control" placeholder="เช่น 3BB-M, ST-MPK, KRI...">
+              <button id="clear-location-btn" class="clear-input-btn hidden" title="ล้างคำค้นหา">&times;</button>
             </div>
           </div>
 

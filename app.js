@@ -39,13 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const toastContainer = document.getElementById('toast-container');
 
   // Filters
-  const filterLocationName = document.getElementById('filter-location-name');
+  const filterLocationCode = document.getElementById('filter-location-code');
+  const clearLocationBtn = document.getElementById('clear-location-btn');
   const filterLocationType = document.getElementById('filter-location-type');
   const filterArticleDesc = document.getElementById('filter-article-desc');
   const clearSearchBtn = document.getElementById('clear-search-btn');
   const resetFiltersBtn = document.getElementById('reset-filters-btn');
   const filterMatchingCount = document.getElementById('filter-matching-count');
-  const locationNameCount = document.getElementById('location-name-count');
   const locationTypeCount = document.getElementById('location-type-count');
 
   // KPI Elements
@@ -162,9 +162,10 @@ document.addEventListener('DOMContentLoaded', () => {
     populateFilterOptions();
 
     // Reset Filter Inputs
-    filterLocationName.value = '';
+    filterLocationCode.value = '';
     filterLocationType.value = '';
     filterArticleDesc.value = '';
+    if (clearLocationBtn) clearLocationBtn.classList.add('hidden');
     clearSearchBtn.classList.add('hidden');
     currentPage = 1;
 
@@ -341,32 +342,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
 
   function populateFilterOptions() {
-    const locNameIdx = colIndexMap['LOCATION_NAME'];
     const locTypeIdx = colIndexMap['LOCATION_TYPE'];
-
-    const uniqueLocNames = new Set();
     const uniqueLocTypes = new Set();
 
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
-      if (locNameIdx !== undefined) {
-        const val = String(row[locNameIdx] || '').trim();
-        if (val) uniqueLocNames.add(val);
-      }
       if (locTypeIdx !== undefined) {
         const val = String(row[locTypeIdx] || '').trim();
         if (val) uniqueLocTypes.add(val);
       }
     }
-
-    // Populate LOCATION_NAME
-    const sortedLocNames = Array.from(uniqueLocNames).sort((a, b) => a.localeCompare(b, 'th'));
-    let locOptions = '<option value="">ทั้งหมด (ทุกสาขา / สถานที่)</option>';
-    sortedLocNames.forEach((name) => {
-      locOptions += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
-    });
-    filterLocationName.innerHTML = locOptions;
-    locationNameCount.textContent = `${sortedLocNames.length.toLocaleString('th-TH')} สาขา`;
 
     // Populate LOCATION_TYPE
     const sortedLocTypes = Array.from(uniqueLocTypes).sort();
@@ -375,14 +360,15 @@ document.addEventListener('DOMContentLoaded', () => {
       typeOptions += `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`;
     });
     filterLocationType.innerHTML = typeOptions;
-    locationTypeCount.textContent = `${sortedLocTypes.length} ประเภท`;
+    if (locationTypeCount) locationTypeCount.textContent = `${sortedLocTypes.length} ประเภท`;
   }
 
   function applyFilters() {
-    const targetLocName = filterLocationName.value.trim().toLowerCase();
+    const targetLocCode = filterLocationCode.value.trim().toLowerCase();
     const targetLocType = filterLocationType.value.trim().toLowerCase();
     const targetArticleQuery = filterArticleDesc.value.trim().toLowerCase();
 
+    const locCodeIdx = colIndexMap['LOCATION_CODE'];
     const locNameIdx = colIndexMap['LOCATION_NAME'];
     const locTypeIdx = colIndexMap['LOCATION_TYPE'];
     const articleDescIdx = colIndexMap['ARTICLE_DESC'];
@@ -398,10 +384,10 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
 
-      // 1. LOCATION_NAME
-      if (targetLocName && locNameIdx !== undefined) {
-        const locVal = String(row[locNameIdx] || '').trim().toLowerCase();
-        if (locVal !== targetLocName) continue;
+      // 1. LOCATION_CODE (Partial match search)
+      if (targetLocCode && locCodeIdx !== undefined) {
+        const codeVal = String(row[locCodeIdx] || '').toLowerCase();
+        if (!codeVal.includes(targetLocCode)) continue;
       }
 
       // 2. LOCATION_TYPE
@@ -485,10 +471,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // Filter Event Listeners
   // ==========================================
 
-  filterLocationName.addEventListener('change', () => {
-    currentPage = 1;
-    applyFilters();
+  let locSearchDebounceTimer = null;
+
+  filterLocationCode.addEventListener('input', (e) => {
+    const val = e.target.value.trim();
+    if (val) {
+      if (clearLocationBtn) clearLocationBtn.classList.remove('hidden');
+    } else {
+      if (clearLocationBtn) clearLocationBtn.classList.add('hidden');
+    }
+
+    clearTimeout(locSearchDebounceTimer);
+    locSearchDebounceTimer = setTimeout(() => {
+      currentPage = 1;
+      applyFilters();
+    }, 250);
   });
+
+  if (clearLocationBtn) {
+    clearLocationBtn.addEventListener('click', () => {
+      filterLocationCode.value = '';
+      clearLocationBtn.classList.add('hidden');
+      currentPage = 1;
+      applyFilters();
+      filterLocationCode.focus();
+    });
+  }
 
   filterLocationType.addEventListener('change', () => {
     currentPage = 1;
@@ -519,9 +527,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   resetFiltersBtn.addEventListener('click', () => {
-    filterLocationName.value = '';
+    filterLocationCode.value = '';
     filterLocationType.value = '';
     filterArticleDesc.value = '';
+    if (clearLocationBtn) clearLocationBtn.classList.add('hidden');
     clearSearchBtn.classList.add('hidden');
     currentPage = 1;
     applyFilters();
