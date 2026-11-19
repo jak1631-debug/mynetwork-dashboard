@@ -121,11 +121,18 @@
       <!-- 1. Executive Filter Panel -->
       <section class="card filter-card">
         <div class="filter-header">
-          <div class="filter-title">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-            <h2>ตัวกรองข้อมูลผู้บริหาร (Executive Filters)</h2>
+          <!-- Quick Group Article Filter Buttons -->
+          <div class="quick-group-section">
+            <span class="quick-group-label">Article Group:</span>
+            <div id="quick-group-buttons" class="quick-group-buttons">
+              <button type="button" class="group-btn-chip active" data-prefix="">ทั้งหมด</button>
+              <button type="button" class="group-btn-chip" data-prefix="TRANSMISSION">Transmission</button>
+              <button type="button" class="group-btn-chip" data-prefix="Material">Material</button>
+              <button type="button" class="group-btn-chip" data-prefix="FACILITY">Facility</button>
+              <button type="button" class="group-btn-chip" data-prefix="Data Network Equipment">Data Network</button>
+              <button type="button" class="group-btn-chip" data-prefix="TOOLS&TEST_EQUIPMENT">Tools & Test</button>
+              <button type="button" class="group-btn-chip" data-prefix="IT Equipment">IT Equipment</button>
+            </div>
           </div>
           <div class="filter-controls-right">
             <!-- Shortcut: กระจายของ X วัน -->
@@ -230,85 +237,7 @@
         </div>
       </section>
 
-      <!-- 2. KPI Summary Cards (4 กล่อง) -->
-      <section class="kpi-grid">
-        <!-- KPI 1: Total QTY -->
-        <div class="kpi-card kpi-emerald">
-          <div class="kpi-content">
-            <div class="kpi-label">ผลรวมจำนวนทั้งหมด (TOTAL QTY)</div>
-            <div class="kpi-value-row">
-              <span id="kpi-total-qty" class="kpi-number">0</span>
-              <span class="kpi-unit">ชิ้น</span>
-            </div>
-            <div class="kpi-sub">ผลรวมสต็อกพัสดุตามเงื่อนไขตัวกรอง</div>
-          </div>
-          <div class="kpi-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-              <line x1="12" y1="22.08" x2="12" y2="12"></line>
-            </svg>
-          </div>
-        </div>
 
-        <!-- KPI 2: Total Reserved QTY -->
-        <div class="kpi-card kpi-amber">
-          <div class="kpi-content">
-            <div class="kpi-label">จำนวนที่ถูกจอง (RESERVED QTY)</div>
-            <div class="kpi-value-row">
-              <span id="kpi-reserved-qty" class="kpi-number">0</span>
-              <span class="kpi-unit">ชิ้น</span>
-            </div>
-            <div class="kpi-sub" id="kpi-reserved-percent">0% ของจำนวนทั้งหมด</div>
-          </div>
-          <div class="kpi-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </div>
-        </div>
-
-        <!-- KPI 3: Total Records -->
-        <div class="kpi-card kpi-blue">
-          <div class="kpi-content">
-            <div class="kpi-label">จำนวนรายการที่พบ (RECORDS)</div>
-            <div class="kpi-value-row">
-              <span id="kpi-total-records" class="kpi-number">0</span>
-              <span class="kpi-unit">รายการ</span>
-            </div>
-            <div class="kpi-sub" id="kpi-records-sub">จากข้อมูลทั้งหมด 0 รายการ</div>
-          </div>
-          <div class="kpi-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="8" y1="6" x2="21" y2="6"></line>
-              <line x1="8" y1="12" x2="21" y2="12"></line>
-              <line x1="8" y1="18" x2="21" y2="18"></line>
-              <line x1="3" y1="6" x2="3.01" y2="6"></line>
-              <line x1="3" y1="12" x2="3.01" y2="12"></line>
-              <line x1="3" y1="18" x2="3.01" y2="18"></line>
-            </svg>
-          </div>
-        </div>
-
-        <!-- KPI 4: Active Locations -->
-        <div class="kpi-card kpi-purple">
-          <div class="kpi-content">
-            <div class="kpi-label">จำนวนสถานที่ / สาขา (LOCATIONS)</div>
-            <div class="kpi-value-row">
-              <span id="kpi-active-locations" class="kpi-number">0</span>
-              <span class="kpi-unit">แห่ง</span>
-            </div>
-            <div class="kpi-sub" id="kpi-articles-count">พบสินค้าไม่ซ้ำ 0 รายการ</div>
-          </div>
-          <div class="kpi-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-              <circle cx="12" cy="10" r="3"></circle>
-            </svg>
-          </div>
-        </div>
-      </section>
 
       <!-- 2.5 Pivot Summary Table (Sum of QTY by Article Type > Group > Article NO) -->
       <section class="card pivot-card">

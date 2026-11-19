@@ -51,6 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Filters
   const btnDispatchShortcut = document.getElementById('btn-dispatch-shortcut');
   const dispatchDaysInput = document.getElementById('dispatch-days-input');
+  const quickGroupButtonsContainer = document.getElementById('quick-group-buttons');
+  let activeGroupPrefix = '';
   const filterLocationCode = document.getElementById('filter-location-code');
   const clearLocationBtn = document.getElementById('clear-location-btn');
   const filterLocationType = document.getElementById('filter-location-type');
@@ -220,6 +222,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     filterLocationType.value = hasStoreOption ? 'STORE' : '';
 
+    activeGroupPrefix = '';
+    activeGroupPrefix = '';
+    updateGroupButtonStates();
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
@@ -439,6 +444,81 @@ document.addEventListener('DOMContentLoaded', () => {
       filterGroupArticle.innerHTML = groupOptions;
       if (groupArticleCount) groupArticleCount.textContent = `${sortedGroupArts.length} Groups`;
     }
+
+    // Populate Quick Group Article Buttons
+    populateQuickGroupButtons(uniqueGroupArts);
+  }
+
+  function formatGroupPrefixLabel(prefix) {
+    const pUpper = prefix.toUpperCase();
+    if (pUpper === 'TRANSMISSION') return 'Transmission';
+    if (pUpper === 'FACILITY') return 'Facility';
+    if (pUpper === 'MATERIAL') return 'Material';
+    if (pUpper.includes('DATA NETWORK')) return 'Data Network';
+    if (pUpper.includes('TOOLS')) return 'Tools & Test';
+    if (pUpper.includes('IT EQUIPMENT') || pUpper.startsWith('IT')) return 'IT Equipment';
+    return prefix;
+  }
+
+  function populateQuickGroupButtons(uniqueGroupArts) {
+    if (!quickGroupButtonsContainer) return;
+
+    const uniquePrefixes = new Set();
+    uniqueGroupArts.forEach((grp) => {
+      if (grp && grp !== 'GROUP_ARTICLE') {
+        const prefix = grp.split('->')[0].trim();
+        if (prefix) uniquePrefixes.add(prefix);
+      }
+    });
+
+    const preferredOrder = ['TRANSMISSION', 'Material', 'FACILITY', 'Data Network Equipment', 'TOOLS&TEST_EQUIPMENT', 'IT Equipment'];
+    const sortedPrefixes = Array.from(uniquePrefixes).sort((a, b) => {
+      const idxA = preferredOrder.indexOf(a);
+      const idxB = preferredOrder.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    let btnHtml = `<button type="button" class="group-btn-chip ${!activeGroupPrefix ? 'active' : ''}" data-prefix="">ทั้งหมด</button>`;
+    sortedPrefixes.forEach((prefix) => {
+      const label = formatGroupPrefixLabel(prefix);
+      const isActive = activeGroupPrefix.toUpperCase() === prefix.toUpperCase();
+      btnHtml += `<button type="button" class="group-btn-chip ${isActive ? 'active' : ''}" data-prefix="${escapeHtml(prefix)}">${escapeHtml(label)}</button>`;
+    });
+    quickGroupButtonsContainer.innerHTML = btnHtml;
+
+    quickGroupButtonsContainer.querySelectorAll('.group-btn-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const prefix = btn.dataset.prefix || '';
+        if (activeGroupPrefix === prefix && prefix !== '') {
+          activeGroupPrefix = ''; // toggle off
+        } else {
+          activeGroupPrefix = prefix;
+        }
+
+        updateGroupButtonStates();
+
+        if (filterGroupArticle) {
+          filterGroupArticle.value = '';
+        }
+
+        applyFilters();
+      });
+    });
+  }
+
+  function updateGroupButtonStates() {
+    if (!quickGroupButtonsContainer) return;
+    quickGroupButtonsContainer.querySelectorAll('.group-btn-chip').forEach((b) => {
+      const bPref = b.dataset.prefix || '';
+      if (bPref.toUpperCase() === activeGroupPrefix.toUpperCase()) {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+    });
   }
 
   function parseRowDate(rawVal) {
@@ -524,10 +604,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeVal !== targetLocType) continue;
       }
 
-      // 3. GROUP_ARTICLE
-      if (targetGroupArticle && groupArtIdx !== undefined) {
-        const grpVal = String(row[groupArtIdx] || '').trim().toLowerCase();
-        if (grpVal !== targetGroupArticle) continue;
+      // 3. GROUP_ARTICLE / Quick Group Prefix Filter
+      if (groupArtIdx !== undefined) {
+        const rawGrp = String(row[groupArtIdx] || '').trim();
+        if (activeGroupPrefix) {
+          const rowPrefix = rawGrp.split('->')[0].trim().toUpperCase();
+          if (rowPrefix !== activeGroupPrefix.toUpperCase()) continue;
+        }
+        if (targetGroupArticle) {
+          if (rawGrp.toLowerCase() !== targetGroupArticle) continue;
+        }
       }
 
       // 4. ARTICLE_DESC partial match
@@ -593,6 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateKPIs(data) {
+    if (!kpiTotalQty) return;
     kpiTotalQty.textContent = Math.round(data.totalQty).toLocaleString('th-TH');
 
     kpiReservedQty.textContent = Math.round(data.reservedQty).toLocaleString('th-TH');
@@ -652,6 +739,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (filterGroupArticle) {
     filterGroupArticle.addEventListener('change', () => {
+      const selectedVal = filterGroupArticle.value.trim();
+      if (selectedVal) {
+        const prefix = selectedVal.split('->')[0].trim();
+        activeGroupPrefix = prefix;
+      } else {
+        activeGroupPrefix = '';
+      }
+      updateGroupButtonStates();
       currentPage = 1;
       activeDrilldown = null;
       applyFilters();
@@ -779,6 +874,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     filterLocationType.value = hasStoreOption ? 'STORE' : '';
 
+    activeGroupPrefix = '';
+    updateGroupButtonStates();
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
