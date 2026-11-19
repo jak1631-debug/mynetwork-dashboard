@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const quickStoreButtonsContainer = document.getElementById('quick-store-buttons');
   let activeGroupPrefix = '';
   let activeStoreGroup = ''; // '', 'HUB', 'RNO', 'KONG'
+  let allAvailableGroupArts = [];
   const filterLocationCode = document.getElementById('filter-location-code');
   const clearLocationBtn = document.getElementById('clear-location-btn');
   const filterLocationType = document.getElementById('filter-location-type');
@@ -228,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activeStoreGroup = '';
     updateGroupButtonStates();
     updateStoreButtonStates();
+    updateGroupArticleDropdown('');
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
@@ -437,19 +439,49 @@ document.addEventListener('DOMContentLoaded', () => {
     filterLocationType.innerHTML = typeOptions;
     if (locationTypeCount) locationTypeCount.textContent = `${sortedLocTypes.length} Types`;
 
-    // Populate GROUP_ARTICLE
-    if (filterGroupArticle) {
-      const sortedGroupArts = Array.from(uniqueGroupArts).sort();
-      let groupOptions = '<option value="">All GROUP_ARTICLE</option>';
-      sortedGroupArts.forEach((grp) => {
-        groupOptions += `<option value="${escapeHtml(grp)}">${escapeHtml(grp)}</option>`;
-      });
-      filterGroupArticle.innerHTML = groupOptions;
-      if (groupArticleCount) groupArticleCount.textContent = `${sortedGroupArts.length} Groups`;
-    }
+    // Store all unique groups and populate dropdown matching activeGroupPrefix
+    allAvailableGroupArts = Array.from(uniqueGroupArts)
+      .filter((grp) => grp && grp !== 'GROUP_ARTICLE')
+      .sort();
+
+    updateGroupArticleDropdown(activeGroupPrefix);
 
     // Populate Quick Group Article Buttons
     populateQuickGroupButtons(uniqueGroupArts);
+  }
+
+  function updateGroupArticleDropdown(prefix = '') {
+    if (!filterGroupArticle) return;
+    const currentVal = filterGroupArticle.value;
+
+    let filtered = allAvailableGroupArts;
+    if (prefix) {
+      const pUpper = prefix.toUpperCase();
+      filtered = allAvailableGroupArts.filter((grp) => {
+        const rowPrefix = grp.split('->')[0].trim().toUpperCase();
+        return rowPrefix === pUpper;
+      });
+    }
+
+    const placeholderLabel = prefix
+      ? `All ${formatGroupPrefixLabel(prefix)} Groups`
+      : 'All GROUP_ARTICLE';
+
+    let groupOptions = `<option value="">${escapeHtml(placeholderLabel)}</option>`;
+    filtered.forEach((grp) => {
+      const isSelected = grp === currentVal ? ' selected' : '';
+      groupOptions += `<option value="${escapeHtml(grp)}"${isSelected}>${escapeHtml(grp)}</option>`;
+    });
+    filterGroupArticle.innerHTML = groupOptions;
+
+    // Reset value if previous selection is not in the filtered options
+    if (currentVal && !filtered.includes(currentVal)) {
+      filterGroupArticle.value = '';
+    }
+
+    if (groupArticleCount) {
+      groupArticleCount.textContent = `${filtered.length} Groups`;
+    }
   }
 
   function formatGroupPrefixLabel(prefix) {
@@ -502,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updateGroupButtonStates();
+        updateGroupArticleDropdown(activeGroupPrefix);
 
         if (filterGroupArticle) {
           filterGroupArticle.value = '';
@@ -510,6 +543,23 @@ document.addEventListener('DOMContentLoaded', () => {
         applyFilters();
       });
     });
+  }
+
+  function getStoreGroupRank(code) {
+    if (!code) return 99;
+    const u = String(code).toUpperCase();
+    if (u.includes('HUB')) return 1; // HUB first
+    if (u.includes('-M-T-')) return 3; // กองงาน third
+    if (/-[MI]-[A-Z]+-/i.test(u)) return 2; // RNO second
+    return 4; // Other
+  }
+
+  function getStoreGroupName(code) {
+    const rank = getStoreGroupRank(code);
+    if (rank === 1) return 'HUB';
+    if (rank === 2) return 'RNO';
+    if (rank === 3) return 'กองงาน';
+    return '';
   }
 
   function matchStoreGroup(locCode, storeGroup) {
@@ -807,10 +857,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (selectedVal) {
         const prefix = selectedVal.split('->')[0].trim();
         activeGroupPrefix = prefix;
-      } else {
-        activeGroupPrefix = '';
+        updateGroupButtonStates();
       }
-      updateGroupButtonStates();
       currentPage = 1;
       activeDrilldown = null;
       applyFilters();
@@ -942,6 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activeStoreGroup = '';
     updateGroupButtonStates();
     updateStoreButtonStates();
+    updateGroupArticleDropdown('');
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
@@ -1161,7 +1210,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (c) locSet.add(c);
       }
     }
-    const allSortedLocs = Array.from(locSet).sort();
+    // Sort location columns: 1. HUB -> 2. RNO -> 3. กองงาน -> 4. Other
+    const allSortedLocs = Array.from(locSet).sort((a, b) => {
+      const rankA = getStoreGroupRank(a);
+      const rankB = getStoreGroupRank(b);
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
     const MAX_LOC_COLS = 60; // Safeguard to ensure smooth DOM rendering performance
     const displayLocCols = allSortedLocs.slice(0, MAX_LOC_COLS);
     activePivotLocCodes = displayLocCols;
@@ -1171,7 +1228,9 @@ document.addEventListener('DOMContentLoaded', () => {
       let thHtml = '<tr><th class="col-article-name">Article NO / หมวดหมู่พัสดุ</th>';
       thHtml += '<th class="col-total-qty" title="ผลรวม QTY ทุกสาขา">QTY</th>';
       displayLocCols.forEach((loc) => {
-        thHtml += `<th class="col-loc-qty" title="สาขา: ${escapeHtml(loc)}">${escapeHtml(loc)}</th>`;
+        const grp = getStoreGroupName(loc);
+        const titleStr = grp ? `[${grp}] สาขา: ${escapeHtml(loc)}` : `สาขา: ${escapeHtml(loc)}`;
+        thHtml += `<th class="col-loc-qty" title="${titleStr}">${escapeHtml(loc)}</th>`;
       });
       if (allSortedLocs.length > MAX_LOC_COLS) {
         thHtml += `<th class="col-loc-qty" title="มีอีก ${allSortedLocs.length - MAX_LOC_COLS} สาขา">... (+${allSortedLocs.length - MAX_LOC_COLS})</th>`;
