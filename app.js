@@ -38,12 +38,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const dragDropOverlay = document.getElementById('drag-drop-overlay');
   const toastContainer = document.getElementById('toast-container');
 
+  // 7 Core Columns to display in the Web Detail Table (matches user request & image 2)
+  const DETAIL_DISPLAY_COLUMNS = [
+    { key: 'CREATED_DATE', label: 'Create' },
+    { key: 'LOCATION_CODE', label: 'LOCATION_CODE' },
+    { key: 'ARTICLE_ID', label: 'ARTICLE_ID' },
+    { key: 'ARTICLE_NO', label: 'ARTICLE_NO' },
+    { key: 'QTY', label: 'QTY' },
+    { key: 'TITLE', label: 'TITLE' }
+  ];
+
   // Filters
+  const btnDispatchShortcut = document.getElementById('btn-dispatch-shortcut');
+  const dispatchDaysInput = document.getElementById('dispatch-days-input');
   const filterLocationCode = document.getElementById('filter-location-code');
   const clearLocationBtn = document.getElementById('clear-location-btn');
   const filterLocationType = document.getElementById('filter-location-type');
+  const filterGroupArticle = document.getElementById('filter-group-article');
+  const groupArticleCount = document.getElementById('group-article-count');
   const filterArticleDesc = document.getElementById('filter-article-desc');
   const clearSearchBtn = document.getElementById('clear-search-btn');
+  const filterTitle = document.getElementById('filter-title');
+  const clearTitleBtn = document.getElementById('clear-title-btn');
   const resetFiltersBtn = document.getElementById('reset-filters-btn');
   const filterMatchingCount = document.getElementById('filter-matching-count');
   const locationTypeCount = document.getElementById('location-type-count');
@@ -65,6 +81,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportCsvBtn = document.getElementById('export-csv-btn');
   const exportBtnText = document.getElementById('export-btn-text');
 
+  // Pivot Summary Elements
+  const pivotTableHead = document.getElementById('pivot-table-head');
+  const pivotTableBody = document.getElementById('pivot-table-body');
+  const btnExpandAll = document.getElementById('btn-expand-all');
+  const btnCollapseAll = document.getElementById('btn-collapse-all');
+  const exportPivotCsvBtn = document.getElementById('export-pivot-csv-btn');
+
+  // Drill-down Elements
+  const drilldownBadgeContainer = document.getElementById('drilldown-badge-container');
+  const drilldownLabelText = document.getElementById('drilldown-label-text');
+  const clearDrilldownBtn = document.getElementById('clear-drilldown-btn');
+  const detailTableCard = document.getElementById('detail-table-card');
+
   const paginationInfo = document.getElementById('pagination-info');
   const pageIndicator = document.getElementById('page-indicator');
   const btnFirstPage = document.getElementById('btn-first-page');
@@ -74,8 +103,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // State
   let allRows = [];                  // All data rows
-  let filteredRows = [];             // Filtered rows
-  let activeDisplayCols = [];        // Column definitions
+  let filteredRows = [];             // Filtered rows (by top filters)
+  let detailRows = [];               // Displayed rows in detail table (filteredRows + drilldown)
+  let activeDrilldown = null;        // { level: 1|2|3, typeName, groupName, articleDesc, locationCode }
+  let isDispatchShortcutActive = false; // "กระจายของ" X วัน shortcut state
+  let activeDisplayCols = [];        // Web Detail Table columns (7 columns)
+  let allExportCols = [];            // Full export columns (all 22 yellow columns)
   let colIndexMap = {};              // Map: colName -> columnIndex
   let currentPage = 1;
   let rowsPerPage = 25;
@@ -138,22 +171,35 @@ document.addEventListener('DOMContentLoaded', () => {
       colIndexMap[String(h).trim().toUpperCase()] = idx;
     });
 
-    // Match 22 yellow columns
+    // 1. Build activeDisplayCols: 7 columns for the web Detail Table (per user request & image 2)
     activeDisplayCols = [];
+    DETAIL_DISPLAY_COLUMNS.forEach((col) => {
+      if (colIndexMap[col.key] !== undefined) {
+        activeDisplayCols.push({
+          name: col.label,
+          realName: col.key,
+          index: colIndexMap[col.key]
+        });
+      }
+    });
+    if (activeDisplayCols.length === 0) {
+      headers.forEach((h, idx) => {
+        activeDisplayCols.push({ name: h || `Column ${idx + 1}`, realName: h, index: idx });
+      });
+    }
+
+    // 2. Build allExportCols: all 22 yellow columns for CSV export
+    allExportCols = [];
     YELLOW_COLUMNS.forEach((yCol) => {
       if (colIndexMap[yCol] !== undefined) {
-        activeDisplayCols.push({
+        allExportCols.push({
           name: yCol,
           index: colIndexMap[yCol]
         });
       }
     });
-
-    // Fallback if no yellow column matches
-    if (activeDisplayCols.length === 0) {
-      headers.forEach((h, idx) => {
-        activeDisplayCols.push({ name: h || `Column ${idx + 1}`, index: idx });
-      });
+    if (allExportCols.length === 0) {
+      allExportCols = [...activeDisplayCols];
     }
 
     allRows = dataRows;
@@ -163,11 +209,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Reset Filter Inputs
     filterLocationCode.value = '';
-    filterLocationType.value = '';
+
+    // Set default LOCATION_TYPE to 'STORE' if exists
+    let hasStoreOption = false;
+    for (let i = 0; i < filterLocationType.options.length; i++) {
+      if (filterLocationType.options[i].value.toUpperCase() === 'STORE') {
+        hasStoreOption = true;
+        break;
+      }
+    }
+    filterLocationType.value = hasStoreOption ? 'STORE' : '';
+
+    if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
+    if (filterTitle) filterTitle.value = '';
+
     if (clearLocationBtn) clearLocationBtn.classList.add('hidden');
     clearSearchBtn.classList.add('hidden');
+    if (clearTitleBtn) clearTitleBtn.classList.add('hidden');
     currentPage = 1;
+    activeDrilldown = null;
 
     // Header Status & Date
     activeFileName.textContent = filename;
@@ -343,7 +404,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function populateFilterOptions() {
     const locTypeIdx = colIndexMap['LOCATION_TYPE'];
+    const groupArtIdx = colIndexMap['GROUP_ARTICLE'];
     const uniqueLocTypes = new Set();
+    const uniqueGroupArts = new Set();
 
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
@@ -351,29 +414,94 @@ document.addEventListener('DOMContentLoaded', () => {
         const val = String(row[locTypeIdx] || '').trim();
         if (val) uniqueLocTypes.add(val);
       }
+      if (groupArtIdx !== undefined) {
+        const val = String(row[groupArtIdx] || '').trim();
+        if (val) uniqueGroupArts.add(val);
+      }
     }
 
     // Populate LOCATION_TYPE
     const sortedLocTypes = Array.from(uniqueLocTypes).sort();
-    let typeOptions = '<option value="">ทั้งหมด (ทุกประเภทสถานที่)</option>';
+    let typeOptions = '<option value="">All LOCATION_TYPE</option>';
     sortedLocTypes.forEach((type) => {
       typeOptions += `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`;
     });
     filterLocationType.innerHTML = typeOptions;
-    if (locationTypeCount) locationTypeCount.textContent = `${sortedLocTypes.length} ประเภท`;
+    if (locationTypeCount) locationTypeCount.textContent = `${sortedLocTypes.length} Types`;
+
+    // Populate GROUP_ARTICLE
+    if (filterGroupArticle) {
+      const sortedGroupArts = Array.from(uniqueGroupArts).sort();
+      let groupOptions = '<option value="">All GROUP_ARTICLE</option>';
+      sortedGroupArts.forEach((grp) => {
+        groupOptions += `<option value="${escapeHtml(grp)}">${escapeHtml(grp)}</option>`;
+      });
+      filterGroupArticle.innerHTML = groupOptions;
+      if (groupArticleCount) groupArticleCount.textContent = `${sortedGroupArts.length} Groups`;
+    }
+  }
+
+  function parseRowDate(rawVal) {
+    if (!rawVal) return null;
+    if (rawVal instanceof Date && !isNaN(rawVal.getTime())) return rawVal;
+    if (typeof rawVal === 'string') {
+      const trimmed = rawVal.trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        const parts = trimmed.split(/[-T ]/);
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      }
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) return d;
+      const parts = trimmed.split(/[\/\-]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        } else {
+          return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+        }
+      }
+    }
+    if (typeof rawVal === 'number') {
+      return new Date((rawVal - (25567 + 2)) * 86400 * 1000);
+    }
+    return null;
   }
 
   function applyFilters() {
     const targetLocCode = filterLocationCode.value.trim().toLowerCase();
     const targetLocType = filterLocationType.value.trim().toLowerCase();
+    const targetGroupArticle = filterGroupArticle ? filterGroupArticle.value.trim().toLowerCase() : '';
     const targetArticleQuery = filterArticleDesc.value.trim().toLowerCase();
+    const targetTitleQuery = filterTitle ? filterTitle.value.trim().toLowerCase() : '';
 
     const locCodeIdx = colIndexMap['LOCATION_CODE'];
     const locNameIdx = colIndexMap['LOCATION_NAME'];
     const locTypeIdx = colIndexMap['LOCATION_TYPE'];
+    const groupArtIdx = colIndexMap['GROUP_ARTICLE'];
     const articleDescIdx = colIndexMap['ARTICLE_DESC'];
+    const titleIdx = colIndexMap['TITLE'];
+    const dateIdx = colIndexMap['CREATED_DATE'];
     const qtyIdx = colIndexMap['QTY'];
     const reservedQtyIdx = colIndexMap['RESERVED_QTY'];
+
+    // Dispatch Shortcut cutoff date
+    let cutoffDate = null;
+    if (isDispatchShortcutActive) {
+      const days = parseInt(dispatchDaysInput ? dispatchDaysInput.value : 7, 10) || 7;
+      let maxDateMs = 0;
+      if (dateIdx !== undefined) {
+        for (let i = 0; i < allRows.length; i++) {
+          const d = parseRowDate(allRows[i][dateIdx]);
+          if (d && d.getTime() > maxDateMs) {
+            maxDateMs = d.getTime();
+          }
+        }
+      }
+      const nowMs = Date.now();
+      const refMs = maxDateMs > 0 ? Math.max(nowMs, maxDateMs) : nowMs;
+      cutoffDate = new Date(refMs - days * 24 * 60 * 60 * 1000);
+      cutoffDate.setHours(0, 0, 0, 0);
+    }
 
     filteredRows = [];
     let sumQty = 0;
@@ -396,10 +524,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeVal !== targetLocType) continue;
       }
 
-      // 3. ARTICLE_DESC partial match
+      // 3. GROUP_ARTICLE
+      if (targetGroupArticle && groupArtIdx !== undefined) {
+        const grpVal = String(row[groupArtIdx] || '').trim().toLowerCase();
+        if (grpVal !== targetGroupArticle) continue;
+      }
+
+      // 4. ARTICLE_DESC partial match
       if (targetArticleQuery && articleDescIdx !== undefined) {
         const artVal = String(row[articleDescIdx] || '').toLowerCase();
         if (!artVal.includes(targetArticleQuery)) continue;
+      }
+
+      // 5. TITLE partial match
+      if (targetTitleQuery && titleIdx !== undefined) {
+        const titleVal = String(row[titleIdx] || '').toLowerCase();
+        if (!titleVal.includes(targetTitleQuery)) continue;
+      }
+
+      // 6. Dispatch Shortcut: CREATED_DATE within past X days
+      if (cutoffDate && dateIdx !== undefined) {
+        const rowDate = parseRowDate(row[dateIdx]);
+        if (!rowDate || rowDate < cutoffDate) continue;
       }
 
       filteredRows.push(row);
@@ -438,14 +584,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update Badges & Export Button
     filterMatchingCount.textContent = `แสดง ${filteredRows.length.toLocaleString('th-TH')} จาก ${allRows.length.toLocaleString('th-TH')} รายการ`;
-    tableRecordCountBadge.textContent = `${filteredRows.length.toLocaleString('th-TH')} รายการ`;
-    if (exportBtnText) {
-      exportBtnText.textContent = `ส่งออกข้อมูลเป็น CSV (${filteredRows.length.toLocaleString('th-TH')} รายการ)`;
-    }
 
-    // Render Table
-    renderTableHeader();
-    renderTablePage();
+    // Render Pivot Summary Table
+    buildAndRenderPivotSummary();
+
+    // Render Detail Table with Drilldown
+    updateDetailTableWithDrilldown(false);
   }
 
   function updateKPIs(data) {
@@ -484,6 +628,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(locSearchDebounceTimer);
     locSearchDebounceTimer = setTimeout(() => {
       currentPage = 1;
+      activeDrilldown = null;
       applyFilters();
     }, 250);
   });
@@ -493,6 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
       filterLocationCode.value = '';
       clearLocationBtn.classList.add('hidden');
       currentPage = 1;
+      activeDrilldown = null;
       applyFilters();
       filterLocationCode.focus();
     });
@@ -500,8 +646,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   filterLocationType.addEventListener('change', () => {
     currentPage = 1;
+    activeDrilldown = null;
     applyFilters();
   });
+
+  if (filterGroupArticle) {
+    filterGroupArticle.addEventListener('change', () => {
+      currentPage = 1;
+      activeDrilldown = null;
+      applyFilters();
+    });
+  }
 
   filterArticleDesc.addEventListener('input', (e) => {
     const val = e.target.value.trim();
@@ -514,6 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
       currentPage = 1;
+      activeDrilldown = null;
       applyFilters();
     }, 250);
   });
@@ -522,17 +678,117 @@ document.addEventListener('DOMContentLoaded', () => {
     filterArticleDesc.value = '';
     clearSearchBtn.classList.add('hidden');
     currentPage = 1;
+    activeDrilldown = null;
     applyFilters();
     filterArticleDesc.focus();
   });
 
+  let titleSearchDebounceTimer = null;
+
+  if (filterTitle) {
+    filterTitle.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (val) {
+        if (clearTitleBtn) clearTitleBtn.classList.remove('hidden');
+      } else {
+        if (clearTitleBtn) clearTitleBtn.classList.add('hidden');
+      }
+
+      clearTimeout(titleSearchDebounceTimer);
+      titleSearchDebounceTimer = setTimeout(() => {
+        currentPage = 1;
+        activeDrilldown = null;
+        applyFilters();
+      }, 250);
+    });
+  }
+
+  if (clearTitleBtn) {
+    clearTitleBtn.addEventListener('click', () => {
+      filterTitle.value = '';
+      clearTitleBtn.classList.add('hidden');
+      currentPage = 1;
+      activeDrilldown = null;
+      applyFilters();
+      filterTitle.focus();
+    });
+  }
+
+  // Dispatch Shortcut Listeners
+  if (btnDispatchShortcut) {
+    btnDispatchShortcut.addEventListener('click', () => {
+      isDispatchShortcutActive = !isDispatchShortcutActive;
+      const days = parseInt(dispatchDaysInput ? dispatchDaysInput.value : 7, 10) || 7;
+
+      if (isDispatchShortcutActive) {
+        btnDispatchShortcut.classList.add('is-active');
+        filterLocationType.value = 'STORE';
+        showToast(`กรองด่วน "กระจายของ": ย้อนหลัง ${days} วัน (LOCATION_TYPE = STORE)`);
+      } else {
+        btnDispatchShortcut.classList.remove('is-active');
+        showToast('ยกเลิกตัวกรองด่วน "กระจายของ"');
+      }
+
+      currentPage = 1;
+      activeDrilldown = null;
+      applyFilters();
+    });
+  }
+
+  if (dispatchDaysInput) {
+    dispatchDaysInput.addEventListener('change', () => {
+      if (isDispatchShortcutActive) {
+        currentPage = 1;
+        activeDrilldown = null;
+        applyFilters();
+        const days = parseInt(dispatchDaysInput.value, 10) || 7;
+        showToast(`อัปเดตกระจายของย้อนหลัง ${days} วัน`);
+      }
+    });
+    dispatchDaysInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (!isDispatchShortcutActive) {
+          isDispatchShortcutActive = true;
+          btnDispatchShortcut.classList.add('is-active');
+          filterLocationType.value = 'STORE';
+        }
+        currentPage = 1;
+        activeDrilldown = null;
+        applyFilters();
+        const days = parseInt(dispatchDaysInput.value, 10) || 7;
+        showToast(`กรองด่วน "กระจายของ": ย้อนหลัง ${days} วัน`);
+      }
+    });
+  }
+
   resetFiltersBtn.addEventListener('click', () => {
+    isDispatchShortcutActive = false;
+    if (btnDispatchShortcut) btnDispatchShortcut.classList.remove('is-active');
+    if (dispatchDaysInput) dispatchDaysInput.value = '7';
+
     filterLocationCode.value = '';
-    filterLocationType.value = '';
+
+    // Reset LOCATION_TYPE to default 'STORE'
+    let hasStoreOption = false;
+    for (let i = 0; i < filterLocationType.options.length; i++) {
+      if (filterLocationType.options[i].value.toUpperCase() === 'STORE') {
+        hasStoreOption = true;
+        break;
+      }
+    }
+    filterLocationType.value = hasStoreOption ? 'STORE' : '';
+
+    if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
+    if (filterTitle) filterTitle.value = '';
+
     if (clearLocationBtn) clearLocationBtn.classList.add('hidden');
     clearSearchBtn.classList.add('hidden');
+    if (clearTitleBtn) clearTitleBtn.classList.add('hidden');
+
     currentPage = 1;
+    activeDrilldown = null;
     applyFilters();
   });
 
@@ -557,7 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnNextPage.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
+    const totalPages = Math.ceil(detailRows.length / rowsPerPage) || 1;
     if (currentPage < totalPages) {
       currentPage++;
       renderTablePage();
@@ -565,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   btnLastPage.addEventListener('click', () => {
-    const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
+    const totalPages = Math.ceil(detailRows.length / rowsPerPage) || 1;
     if (currentPage < totalPages) {
       currentPage = totalPages;
       renderTablePage();
@@ -581,7 +837,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderTableHeader() {
     let thHtml = '<tr><th class="col-row-num">#</th>';
     activeDisplayCols.forEach((colDef) => {
-      const isQty = colDef.name === 'QTY' || colDef.name.includes('QTY');
+      const isQty = colDef.realName === 'QTY' || colDef.name === 'QTY';
       const alignClass = isQty ? ' style="text-align: right;"' : '';
       thHtml += `<th title="${escapeHtml(colDef.name)}"${alignClass}>${escapeHtml(colDef.name)}</th>`;
     });
@@ -590,7 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderTablePage() {
-    const totalRecords = filteredRows.length;
+    const totalRecords = detailRows.length;
     const totalPages = Math.ceil(totalRecords / rowsPerPage) || 1;
 
     if (currentPage > totalPages) currentPage = totalPages;
@@ -598,7 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const startIdx = (currentPage - 1) * rowsPerPage;
     const endIdx = Math.min(startIdx + rowsPerPage, totalRecords);
-    const pageRows = filteredRows.slice(startIdx, endIdx);
+    const pageRows = detailRows.slice(startIdx, endIdx);
 
     if (totalRecords === 0) {
       paginationInfo.textContent = 'ไม่พบข้อมูลที่ตรงกับเงื่อนไขตัวกรอง';
@@ -634,8 +890,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       activeDisplayCols.forEach((colDef) => {
         const val = row[colDef.index];
-        const isQtyCol = colDef.name === 'QTY';
-        const isReservedCol = colDef.name === 'RESERVED_QTY' || colDef.name === 'RESERVED_RTF_QTY' || colDef.name === 'RESERVED_QUOTA';
+        const isQtyCol = colDef.realName === 'QTY' || colDef.name === 'QTY';
+        const isDateCol = colDef.realName === 'CREATED_DATE' || colDef.name === 'Create';
+        const isReservedCol = colDef.realName === 'RESERVED_QTY' || colDef.name === 'RESERVED_QTY';
+        const isArticleNoCol = colDef.realName === 'ARTICLE_NO' || colDef.name === 'ARTICLE_NO';
 
         let cellClass = '';
         let formattedVal = '';
@@ -646,15 +904,27 @@ document.addEventListener('DOMContentLoaded', () => {
           cellClass = 'cell-qty';
           const n = parseFloat(val);
           formattedVal = !isNaN(n) ? n.toLocaleString('th-TH') : escapeHtml(String(val));
+        } else if (isDateCol) {
+          if (val instanceof Date && !isNaN(val)) {
+            formattedVal = escapeHtml(val.toISOString().slice(0, 10));
+          } else {
+            formattedVal = escapeHtml(String(val));
+          }
         } else if (isReservedCol) {
           cellClass = 'cell-reserved';
           const n = parseFloat(val);
           formattedVal = !isNaN(n) ? n.toLocaleString('th-TH') : escapeHtml(String(val));
+        } else if (isArticleNoCol) {
+          const artDescIdx = colIndexMap['ARTICLE_DESC'];
+          const descVal = artDescIdx !== undefined ? String(row[artDescIdx] || '').trim() : '';
+          if (descVal) {
+            formattedVal = `<span class="article-no-hover" title="${escapeHtml(descVal)}">${escapeHtml(String(val))}</span>`;
+          } else {
+            formattedVal = escapeHtml(String(val));
+          }
         } else if (typeof val === 'number') {
           cellClass = 'cell-numeric';
           formattedVal = val.toLocaleString('th-TH');
-        } else if (val instanceof Date && !isNaN(val)) {
-          formattedVal = escapeHtml(val.toLocaleDateString('th-TH'));
         } else {
           formattedVal = escapeHtml(String(val));
         }
@@ -671,20 +941,542 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================
+  // Pivot Summary Table with Dynamic LOCATION_CODE Breakdown
+  // (Grouped by: ARTICLE_TYPE -> GROUP_ARTICLE -> ARTICLE_NO)
+  // ==========================================
+
+  let pivotTreeData = new Map();
+  let activePivotLocCodes = [];
+
+  function buildAndRenderPivotSummary() {
+    if (!pivotTableBody) return;
+
+    const articleTypeIdx = colIndexMap['ARTICLE_TYPE'];
+    const groupArticleIdx = colIndexMap['GROUP_ARTICLE'];
+    const articleNoIdx = colIndexMap['ARTICLE_NO'] !== undefined ? colIndexMap['ARTICLE_NO'] : colIndexMap['ARTICLE_DESC'];
+    const articleDescIdx = colIndexMap['ARTICLE_DESC'];
+    const locCodeIdx = colIndexMap['LOCATION_CODE'];
+    const qtyIdx = colIndexMap['QTY'];
+
+    if (articleTypeIdx === undefined || groupArticleIdx === undefined || articleNoIdx === undefined) {
+      pivotTableBody.innerHTML = `
+        <tr>
+          <td colspan="2" style="text-align: center; padding: 24px; color: var(--text-muted);">
+            ARTICLE_TYPE, GROUP_ARTICLE or ARTICLE_NO column not found
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    if (filteredRows.length === 0) {
+      if (pivotTableHead) {
+        pivotTableHead.innerHTML = `
+          <tr>
+            <th class="col-article-name">Article NO / หมวดหมู่พัสดุ</th>
+            <th class="col-total-qty">QTY</th>
+          </tr>
+        `;
+      }
+      pivotTableBody.innerHTML = `
+        <tr>
+          <td colspan="2" style="text-align: center; padding: 24px; color: var(--text-muted);">
+            ไม่พบข้อมูลตามเงื่อนไขตัวกรอง
+          </td>
+        </tr>
+      `;
+      pivotTreeData = new Map();
+      activePivotLocCodes = [];
+      return;
+    }
+
+    // 1. Collect distinct location_codes present in filteredRows
+    const locSet = new Set();
+    if (locCodeIdx !== undefined) {
+      for (let i = 0; i < filteredRows.length; i++) {
+        const c = String(filteredRows[i][locCodeIdx] || '').trim();
+        if (c) locSet.add(c);
+      }
+    }
+    const allSortedLocs = Array.from(locSet).sort();
+    const MAX_LOC_COLS = 60; // Safeguard to ensure smooth DOM rendering performance
+    const displayLocCols = allSortedLocs.slice(0, MAX_LOC_COLS);
+    activePivotLocCodes = displayLocCols;
+
+    // 2. Render Pivot Table Header
+    if (pivotTableHead) {
+      let thHtml = '<tr><th class="col-article-name">Article NO / หมวดหมู่พัสดุ</th>';
+      thHtml += '<th class="col-total-qty" title="ผลรวม QTY ทุกสาขา">QTY</th>';
+      displayLocCols.forEach((loc) => {
+        thHtml += `<th class="col-loc-qty" title="สาขา: ${escapeHtml(loc)}">${escapeHtml(loc)}</th>`;
+      });
+      if (allSortedLocs.length > MAX_LOC_COLS) {
+        thHtml += `<th class="col-loc-qty" title="มีอีก ${allSortedLocs.length - MAX_LOC_COLS} สาขา">... (+${allSortedLocs.length - MAX_LOC_COLS})</th>`;
+      }
+      thHtml += '</tr>';
+      pivotTableHead.innerHTML = thHtml;
+    }
+
+    // 3. Build Aggregation Tree with location breakdowns by ARTICLE_NO
+    const tree = new Map();
+
+    for (let i = 0; i < filteredRows.length; i++) {
+      const row = filteredRows[i];
+      const type = String(row[articleTypeIdx] || '(Unspecified Type)').trim();
+      const group = String(row[groupArticleIdx] || '(Unspecified Group)').trim();
+      const articleNo = String(row[articleNoIdx] || '(Unspecified Article)').trim();
+      const articleDesc = articleDescIdx !== undefined ? String(row[articleDescIdx] || '').trim() : '';
+      const loc = locCodeIdx !== undefined ? String(row[locCodeIdx] || '').trim() : '';
+      const qty = parseFloat(row[qtyIdx]) || 0;
+
+      if (!tree.has(type)) {
+        tree.set(type, { totalQty: 0, locQtys: new Map(), groups: new Map() });
+      }
+      const typeData = tree.get(type);
+      typeData.totalQty += qty;
+      if (loc) typeData.locQtys.set(loc, (typeData.locQtys.get(loc) || 0) + qty);
+
+      if (!typeData.groups.has(group)) {
+        typeData.groups.set(group, { totalQty: 0, locQtys: new Map(), articles: new Map() });
+      }
+      const groupData = typeData.groups.get(group);
+      groupData.totalQty += qty;
+      if (loc) groupData.locQtys.set(loc, (groupData.locQtys.get(loc) || 0) + qty);
+
+      if (!groupData.articles.has(articleNo)) {
+        groupData.articles.set(articleNo, { totalQty: 0, locQtys: new Map(), desc: articleDesc });
+      }
+      const artData = groupData.articles.get(articleNo);
+      artData.totalQty += qty;
+      if (!artData.desc && articleDesc) artData.desc = articleDesc;
+      if (loc) artData.locQtys.set(loc, (artData.locQtys.get(loc) || 0) + qty);
+    }
+
+    pivotTreeData = tree;
+
+    // 4. Render Table Rows
+    const fragment = document.createDocumentFragment();
+    let typeIndex = 0;
+
+    tree.forEach((typeObj, typeName) => {
+      typeIndex++;
+      const typeId = `pvt-type-${typeIndex}`;
+
+      // Level 1 Row (ARTICLE_TYPE) - no summary totals as requested
+      const trL1 = document.createElement('tr');
+      trL1.className = 'pivot-row pivot-row-level-1';
+      trL1.dataset.typeId = typeId;
+      trL1.dataset.level = '1';
+      trL1.dataset.typeName = typeName;
+
+      let l1Html = `
+        <td class="col-article-name">
+          <div class="tree-cell">
+            <button type="button" class="tree-toggle-btn" data-target-type="${typeId}" title="ย่อ/ขยาย">−</button>
+            <span>${escapeHtml(typeName)}</span>
+          </div>
+        </td>
+        <td class="qty-val-l1 col-total-qty cell-empty">-</td>
+      `;
+      displayLocCols.forEach((loc) => {
+        l1Html += `<td class="qty-val-l1 col-loc-qty cell-empty">-</td>`;
+      });
+      if (allSortedLocs.length > MAX_LOC_COLS) {
+        l1Html += `<td class="col-loc-qty cell-empty">-</td>`;
+      }
+      trL1.innerHTML = l1Html;
+      fragment.appendChild(trL1);
+
+      // Level 2 Rows (GROUP_ARTICLE) - no summary totals
+      let groupIndex = 0;
+      typeObj.groups.forEach((groupObj, groupName) => {
+        groupIndex++;
+        const groupId = `${typeId}-grp-${groupIndex}`;
+
+        const trL2 = document.createElement('tr');
+        trL2.className = 'pivot-row pivot-row-level-2';
+        trL2.dataset.typeId = typeId;
+        trL2.dataset.groupId = groupId;
+        trL2.dataset.level = '2';
+        trL2.dataset.typeName = typeName;
+        trL2.dataset.groupName = groupName;
+
+        let l2Html = `
+          <td class="col-article-name">
+            <div class="tree-cell">
+              <span class="tree-indent-1"></span>
+              <button type="button" class="tree-toggle-btn" data-target-group="${groupId}" title="ย่อ/ขยาย">−</button>
+              <span>${escapeHtml(groupName)}</span>
+            </div>
+          </td>
+          <td class="qty-val-l2 col-total-qty cell-empty">-</td>
+        `;
+        displayLocCols.forEach((loc) => {
+          l2Html += `<td class="qty-val-l2 col-loc-qty cell-empty">-</td>`;
+        });
+        if (allSortedLocs.length > MAX_LOC_COLS) {
+          l2Html += `<td class="col-loc-qty cell-empty">-</td>`;
+        }
+        trL2.innerHTML = l2Html;
+        fragment.appendChild(trL2);
+
+        // Level 3 Rows (ARTICLE_NO)
+        groupObj.articles.forEach((artObj, articleNo) => {
+          const trL3 = document.createElement('tr');
+          trL3.className = 'pivot-row pivot-row-level-3';
+          trL3.dataset.typeId = typeId;
+          trL3.dataset.groupId = groupId;
+          trL3.dataset.level = '3';
+          trL3.dataset.typeName = typeName;
+          trL3.dataset.groupName = groupName;
+          trL3.dataset.articleNo = articleNo;
+
+          const descTooltip = artObj.desc ? ` title="${escapeHtml(artObj.desc)}"` : '';
+          let l3Html = `
+            <td class="col-article-name">
+              <div class="tree-cell">
+                <span class="tree-indent-2"></span>
+                <span${descTooltip} class="${artObj.desc ? 'article-no-hover' : ''}">${escapeHtml(articleNo)}</span>
+              </div>
+            </td>
+            <td class="qty-val-l3 col-total-qty">
+              <span class="qty-clickable" data-drill-level="3" data-type="${escapeHtml(typeName)}" data-group="${escapeHtml(groupName)}" data-article="${escapeHtml(articleNo)}" title="คลิกตัวเลขเพื่อกรอง ${escapeHtml(articleNo)} ทุกสาขา">${formatNumber(artObj.totalQty)}</span>
+            </td>
+          `;
+          displayLocCols.forEach((loc) => {
+            const lQty = artObj.locQtys.get(loc) || 0;
+            l3Html += `<td class="qty-val-l3 col-loc-qty">`;
+            if (lQty > 0) {
+              l3Html += `<span class="qty-clickable" data-drill-level="3" data-type="${escapeHtml(typeName)}" data-group="${escapeHtml(groupName)}" data-article="${escapeHtml(articleNo)}" data-loc="${escapeHtml(loc)}" title="คลิกเพื่อกรอง ${escapeHtml(articleNo)} สาขา ${escapeHtml(loc)}">${formatNumber(lQty)}</span>`;
+            } else {
+              l3Html += `<span class="cell-empty">-</span>`;
+            }
+            l3Html += `</td>`;
+          });
+          if (allSortedLocs.length > MAX_LOC_COLS) {
+            l3Html += `<td class="col-loc-qty cell-empty">-</td>`;
+          }
+          trL3.innerHTML = l3Html;
+          fragment.appendChild(trL3);
+        });
+      });
+    });
+
+    pivotTableBody.innerHTML = '';
+    pivotTableBody.appendChild(fragment);
+
+    attachPivotToggleListeners();
+    updatePivotRowHighlights();
+  }
+
+  function attachPivotToggleListeners() {
+    // Level 1 toggles
+    pivotTableBody.querySelectorAll('.tree-toggle-btn[data-target-type]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const typeId = btn.dataset.targetType;
+        const isExpanded = btn.textContent === '−';
+
+        btn.textContent = isExpanded ? '+' : '−';
+
+        const childRows = pivotTableBody.querySelectorAll(`tr[data-type-id="${typeId}"][data-level="2"], tr[data-type-id="${typeId}"][data-level="3"]`);
+        childRows.forEach((r) => {
+          if (isExpanded) {
+            r.classList.add('pivot-row-hidden');
+          } else {
+            if (r.dataset.level === '2') {
+              r.classList.remove('pivot-row-hidden');
+            } else if (r.dataset.level === '3') {
+              const grpId = r.dataset.groupId;
+              const grpToggle = pivotTableBody.querySelector(`.tree-toggle-btn[data-target-group="${grpId}"]`);
+              if (!grpToggle || grpToggle.textContent === '−') {
+                r.classList.remove('pivot-row-hidden');
+              }
+            }
+          }
+        });
+      });
+    });
+
+    // Level 2 toggles
+    pivotTableBody.querySelectorAll('.tree-toggle-btn[data-target-group]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const groupId = btn.dataset.targetGroup;
+        const isExpanded = btn.textContent === '−';
+
+        btn.textContent = isExpanded ? '+' : '−';
+
+        const childRows = pivotTableBody.querySelectorAll(`tr[data-group-id="${groupId}"][data-level="3"]`);
+        childRows.forEach((r) => {
+          if (isExpanded) {
+            r.classList.add('pivot-row-hidden');
+          } else {
+            r.classList.remove('pivot-row-hidden');
+          }
+        });
+      });
+    });
+
+    // Clickable QTY numbers for drill-down to Detail Table
+    pivotTableBody.querySelectorAll('.qty-clickable').forEach((span) => {
+      span.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const level = parseInt(span.dataset.drillLevel, 10);
+        const typeName = span.dataset.type || '';
+        const groupName = span.dataset.group || '';
+        const articleNo = span.dataset.article || '';
+        const locationCode = span.dataset.loc || '';
+
+        // If clicked again on the same drilldown, toggle off
+        if (
+          activeDrilldown &&
+          activeDrilldown.level === level &&
+          activeDrilldown.typeName === typeName &&
+          activeDrilldown.groupName === groupName &&
+          activeDrilldown.articleNo === articleNo &&
+          (activeDrilldown.locationCode || '') === locationCode
+        ) {
+          activeDrilldown = null;
+          updateDetailTableWithDrilldown(false);
+          showToast('ยกเลิกการกรองเจาะจงรายละเอียดแล้ว');
+          return;
+        }
+
+        activeDrilldown = { level, typeName, groupName, articleNo, locationCode: locationCode || null };
+        updateDetailTableWithDrilldown(true);
+
+        let targetDesc = '';
+        if (level === 1) targetDesc = `ประเภท: ${typeName}`;
+        else if (level === 2) targetDesc = `กลุ่ม: ${groupName}`;
+        else if (level === 3) targetDesc = `พัสดุ: ${articleNo}`;
+        if (locationCode) {
+          targetDesc += ` [สาขา: ${locationCode}]`;
+        }
+        showToast(`เจาะจงตารางรายละเอียด: ${targetDesc}`);
+      });
+    });
+  }
+
+  // Expand All / Collapse All buttons
+  if (btnExpandAll) {
+    btnExpandAll.addEventListener('click', () => {
+      pivotTableBody.querySelectorAll('tr.pivot-row').forEach((r) => {
+        r.classList.remove('pivot-row-hidden');
+      });
+      pivotTableBody.querySelectorAll('.tree-toggle-btn').forEach((btn) => {
+        btn.textContent = '−';
+      });
+    });
+  }
+
+  if (btnCollapseAll) {
+    btnCollapseAll.addEventListener('click', () => {
+      pivotTableBody.querySelectorAll('tr[data-level="2"], tr[data-level="3"]').forEach((r) => {
+        r.classList.add('pivot-row-hidden');
+      });
+      pivotTableBody.querySelectorAll('.tree-toggle-btn').forEach((btn) => {
+        btn.textContent = '+';
+      });
+    });
+  }
+
+  // Export Pivot Summary to CSV (including dynamic LOCATION_CODE columns)
+  if (exportPivotCsvBtn) {
+    exportPivotCsvBtn.addEventListener('click', exportPivotSummaryToCSV);
+  }
+
+  function exportPivotSummaryToCSV() {
+    if (!pivotTreeData || pivotTreeData.size === 0) {
+      alert('ไม่มีข้อมูลสรุปสำหรับส่งออก');
+      return;
+    }
+
+    const locCols = activePivotLocCodes || [];
+    const headers = ['Article Type', 'Group Article', 'Article NO', 'QTY', ...locCols];
+    const csvLines = [headers.map((h) => `"${h.replace(/"/g, '""')}"`).join(',')];
+
+    pivotTreeData.forEach((typeObj, typeName) => {
+      typeObj.groups.forEach((groupObj, groupName) => {
+        groupObj.articles.forEach((artObj, articleNo) => {
+          const row = [
+            `"${typeName.replace(/"/g, '""')}"`,
+            `"${groupName.replace(/"/g, '""')}"`,
+            `"${articleNo.replace(/"/g, '""')}"`,
+            artObj.totalQty
+          ];
+          locCols.forEach((loc) => {
+            row.push(artObj.locQtys.get(loc) || 0);
+          });
+          csvLines.push(row.join(','));
+        });
+      });
+    });
+
+    const csvContent = '\uFEFF' + csvLines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `ExportPWS_PivotSummary_${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast('ส่งออกตารางสรุป Pivot CSV เรียบร้อยแล้ว');
+  }
+
+  function formatNumber(num) {
+    if (isNaN(num)) return '0';
+    if (Math.floor(num) === num) {
+      return Number(num).toLocaleString('th-TH');
+    }
+    return Number(num.toFixed(3)).toLocaleString('th-TH');
+  }
+
+  // ==========================================
+  // Drill-down Management
+  // ==========================================
+
+  function updateDetailTableWithDrilldown(autoScroll = false) {
+    const articleTypeIdx = colIndexMap['ARTICLE_TYPE'];
+    const groupArticleIdx = colIndexMap['GROUP_ARTICLE'];
+    const articleNoIdx = colIndexMap['ARTICLE_NO'] !== undefined ? colIndexMap['ARTICLE_NO'] : colIndexMap['ARTICLE_DESC'];
+    const locCodeIdx = colIndexMap['LOCATION_CODE'];
+
+    if (!activeDrilldown) {
+      detailRows = [...filteredRows];
+      if (drilldownBadgeContainer) drilldownBadgeContainer.classList.add('hidden');
+    } else {
+      const { level, typeName, groupName, articleNo, locationCode } = activeDrilldown;
+      detailRows = filteredRows.filter((row) => {
+        let matchHierarchy = true;
+        if (level === 1) {
+          matchHierarchy = articleTypeIdx !== undefined && String(row[articleTypeIdx] || '').trim() === typeName;
+        } else if (level === 2) {
+          const matchType = articleTypeIdx === undefined || String(row[articleTypeIdx] || '').trim() === typeName;
+          const matchGroup = groupArticleIdx !== undefined && String(row[groupArticleIdx] || '').trim() === groupName;
+          matchHierarchy = matchType && matchGroup;
+        } else if (level === 3) {
+          const matchType = articleTypeIdx === undefined || String(row[articleTypeIdx] || '').trim() === typeName;
+          const matchGroup = groupArticleIdx === undefined || String(row[groupArticleIdx] || '').trim() === groupName;
+          const matchArt = articleNoIdx !== undefined && String(row[articleNoIdx] || '').trim() === articleNo;
+          matchHierarchy = matchType && matchGroup && matchArt;
+        }
+
+        if (!matchHierarchy) return false;
+
+        if (locationCode && locCodeIdx !== undefined) {
+          const rowLoc = String(row[locCodeIdx] || '').trim();
+          if (rowLoc !== locationCode) return false;
+        }
+
+        return true;
+      });
+
+      if (drilldownBadgeContainer) {
+        drilldownBadgeContainer.classList.remove('hidden');
+        let badgeText = '';
+        if (level === 1) {
+          badgeText = `ประเภท: ${typeName}`;
+        } else if (level === 2) {
+          badgeText = `กลุ่ม: ${groupName}`;
+        } else if (level === 3) {
+          badgeText = `พัสดุ: ${articleNo}`;
+        }
+        if (locationCode) {
+          badgeText += ` | สาขา: ${locationCode}`;
+        }
+        if (drilldownLabelText) {
+          drilldownLabelText.textContent = badgeText;
+        }
+      }
+    }
+
+    // Update Detail Table badge & Export button count
+    if (tableRecordCountBadge) {
+      tableRecordCountBadge.textContent = `${detailRows.length.toLocaleString('th-TH')} รายการ`;
+    }
+    if (exportBtnText) {
+      exportBtnText.textContent = `ส่งออกข้อมูลเป็น CSV (${detailRows.length.toLocaleString('th-TH')} รายการ)`;
+    }
+
+    updatePivotRowHighlights();
+
+    currentPage = 1;
+    renderTableHeader();
+    renderTablePage();
+
+    if (autoScroll && detailTableCard) {
+      setTimeout(() => {
+        detailTableCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }
+
+  function updatePivotRowHighlights() {
+    if (!pivotTableBody) return;
+    const allPivotRows = pivotTableBody.querySelectorAll('tr.pivot-row');
+    allPivotRows.forEach((r) => r.classList.remove('is-active-drilldown'));
+    pivotTableBody.querySelectorAll('.qty-clickable').forEach((el) => el.classList.remove('is-active-cell'));
+
+    if (!activeDrilldown) return;
+
+    const { level, typeName, groupName, articleNo, locationCode } = activeDrilldown;
+    allPivotRows.forEach((r) => {
+      const rLevel = parseInt(r.dataset.level, 10);
+      if (rLevel === level) {
+        const matchType = r.dataset.typeName === typeName;
+        const matchGroup = !groupName || r.dataset.groupName === groupName;
+        const matchArt = !articleNo || r.dataset.articleNo === articleNo;
+
+        let isMatch = false;
+        if (level === 1 && matchType) isMatch = true;
+        else if (level === 2 && matchType && matchGroup) isMatch = true;
+        else if (level === 3 && matchType && matchGroup && matchArt) isMatch = true;
+
+        if (isMatch) {
+          r.classList.add('is-active-drilldown');
+          const spans = r.querySelectorAll('.qty-clickable');
+          spans.forEach((sp) => {
+            const spLoc = sp.dataset.loc || '';
+            if (locationCode) {
+              if (spLoc === locationCode) sp.classList.add('is-active-cell');
+            } else {
+              if (!spLoc) sp.classList.add('is-active-cell');
+            }
+          });
+        }
+      }
+    });
+  }
+
+  if (clearDrilldownBtn) {
+    clearDrilldownBtn.addEventListener('click', () => {
+      activeDrilldown = null;
+      updateDetailTableWithDrilldown(false);
+      showToast('ยกเลิกการกรองเจาะจงรายละเอียดแล้ว');
+    });
+  }
+
+  // ==========================================
   // Export CSV
   // ==========================================
 
   function exportFilteredDataToCSV() {
-    if (filteredRows.length === 0) {
+    if (detailRows.length === 0) {
       alert('ไม่มีข้อมูลให้ส่งออก');
       return;
     }
 
-    const headers = activeDisplayCols.map((c) => `"${c.name.replace(/"/g, '""')}"`);
+    const colsToExport = (allExportCols && allExportCols.length > 0) ? allExportCols : activeDisplayCols;
+    const headers = colsToExport.map((c) => `"${c.name.replace(/"/g, '""')}"`);
     const csvLines = [headers.join(',')];
 
-    filteredRows.forEach((row) => {
-      const line = activeDisplayCols.map((colDef) => {
+    detailRows.forEach((row) => {
+      const line = colsToExport.map((colDef) => {
         let val = row[colDef.index];
         if (val === undefined || val === null) val = '';
         if (val instanceof Date) {
@@ -708,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    showToast(`ส่งออกข้อมูล CSV เรียบร้อยแล้ว (${filteredRows.length.toLocaleString('th-TH')} รายการ)`);
+    showToast(`ส่งออกข้อมูล CSV เรียบร้อยแล้ว (${detailRows.length.toLocaleString('th-TH')} รายการ)`);
   }
 
   // ==========================================

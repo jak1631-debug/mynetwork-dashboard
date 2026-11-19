@@ -128,6 +128,20 @@
             <h2>ตัวกรองข้อมูลผู้บริหาร (Executive Filters)</h2>
           </div>
           <div class="filter-controls-right">
+            <!-- Shortcut: กระจายของ X วัน -->
+            <div class="dispatch-shortcut-group">
+              <button type="button" id="btn-dispatch-shortcut" class="btn btn-sm btn-dispatch" title="กรองด่วน: กระจายของย้อนหลังตามจำนวนวัน (LOCATION_TYPE = STORE)">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+                กระจายของ
+              </button>
+              <div class="dispatch-days-input-wrapper">
+                <input type="number" id="dispatch-days-input" min="1" max="365" value="7" class="dispatch-days-input" title="จำนวนวันย้อนหลัง">
+                <span class="dispatch-days-label">วัน</span>
+              </div>
+            </div>
+
             <span id="filter-matching-count" class="filter-stats">แสดง 0 จาก 0 รายการ</span>
             <button id="reset-filters-btn" class="btn btn-sm btn-ghost" title="ล้างเงื่อนไขตัวกรองทั้งหมด">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -140,48 +154,77 @@
         </div>
 
         <div class="filters-grid">
-          <!-- Filter 1: LOCATION_CODE (Partial match search) -->
+          <!-- Filter 1: LOCATION_CODE -->
           <div class="filter-group">
             <label for="filter-location-code">
-              <span>รหัสสถานที่ / สาขา (LOCATION_CODE)</span>
-              <span class="label-hint">พิมพ์ค้นหาบางส่วนของคำได้</span>
+              <span>LOCATION_CODE</span>
+              <span class="label-hint">Search</span>
             </label>
             <div class="search-input-wrapper">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <input type="text" id="filter-location-code" class="form-control" placeholder="เช่น 3BB-M, ST-MPK, KRI...">
-              <button id="clear-location-btn" class="clear-input-btn hidden" title="ล้างคำค้นหา">&times;</button>
+              <input type="text" id="filter-location-code" class="form-control" placeholder="Search location code...">
+              <button id="clear-location-btn" class="clear-input-btn hidden" title="Clear">&times;</button>
             </div>
           </div>
 
-          <!-- Filter 2: LOCATION_TYPE -->
+          <!-- Filter 2: LOCATION_TYPE (Default: STORE) -->
           <div class="filter-group">
             <label for="filter-location-type">
-              <span>ประเภทสถานที่ (LOCATION_TYPE)</span>
-              <span id="location-type-count" class="label-hint">0 ประเภท</span>
+              <span>LOCATION_TYPE</span>
+              <span id="location-type-count" class="label-hint">0 Types</span>
             </label>
             <div class="select-wrapper">
               <select id="filter-location-type" class="form-control">
-                <option value="">ทั้งหมด (ทุกประเภทสถานที่)</option>
+                <option value="">All LOCATION_TYPE</option>
               </select>
             </div>
           </div>
 
-          <!-- Filter 3: ARTICLE_DESC (Partial match) -->
-          <div class="filter-group filter-group-grow">
+          <!-- Filter 3: GROUP_ARTICLE -->
+          <div class="filter-group">
+            <label for="filter-group-article">
+              <span>GROUP_ARTICLE</span>
+              <span id="group-article-count" class="label-hint">0 Groups</span>
+            </label>
+            <div class="select-wrapper">
+              <select id="filter-group-article" class="form-control">
+                <option value="">All GROUP_ARTICLE</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Filter 4: ARTICLE_DESC -->
+          <div class="filter-group">
             <label for="filter-article-desc">
-              <span>ค้นหาชื่อสินค้า / พัสดุ (ARTICLE_DESC)</span>
-              <span class="label-hint">พิมพ์ค้นหาบางส่วนของคำได้</span>
+              <span>ARTICLE_DESC</span>
+              <span class="label-hint">Search</span>
             </label>
             <div class="search-input-wrapper">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               </svg>
-              <input type="text" id="filter-article-desc" class="form-control" placeholder="เช่น CABLE, MODEM, ROUTER, ONU, แบตเตอรี่...">
-              <button id="clear-search-btn" class="clear-input-btn hidden" title="ล้างคำค้นหา">&times;</button>
+              <input type="text" id="filter-article-desc" class="form-control" placeholder="Search article description...">
+              <button id="clear-search-btn" class="clear-input-btn hidden" title="Clear">&times;</button>
+            </div>
+          </div>
+
+          <!-- Filter 5: TITLE -->
+          <div class="filter-group">
+            <label for="filter-title">
+              <span>TITLE</span>
+              <span class="label-hint">Search</span>
+            </label>
+            <div class="search-input-wrapper">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="filter-title" class="form-control" placeholder="Search title...">
+              <button id="clear-title-btn" class="clear-input-btn hidden" title="Clear">&times;</button>
             </div>
           </div>
         </div>
@@ -267,12 +310,79 @@
         </div>
       </section>
 
+      <!-- 2.5 Pivot Summary Table (Sum of QTY by Article Type > Group > Article NO) -->
+      <section class="card pivot-card">
+        <div class="pivot-card-header">
+          <div class="pivot-title-group">
+            <div class="pivot-icon-box">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="3" y1="9" x2="21" y2="9"></line>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+            </div>
+            <div>
+              <h2>ตารางสรุปข้อมูลตามหมวดหมู่พัสดุ (Pivot Summary)</h2>
+              <span class="pivot-subtitle">จำแนกตาม Article Type &rarr; Group Article &rarr; Article NO (รวม QTY แยกตาม LOCATION_CODE)</span>
+            </div>
+          </div>
+
+          <div class="pivot-actions">
+            <button id="btn-expand-all" class="btn btn-sm btn-outline" title="ขยายทุกหมวดหมู่">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="7 11 12 6 17 11"></polyline>
+                <polyline points="7 17 12 12 17 17"></polyline>
+              </svg>
+              ขยายทั้งหมด
+            </button>
+            <button id="btn-collapse-all" class="btn btn-sm btn-outline" title="ยุบทุกหมวดหมู่">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="7 7 12 12 17 7"></polyline>
+                <polyline points="7 13 12 18 17 13"></polyline>
+              </svg>
+              ยุบทั้งหมด
+            </button>
+            <button id="export-pivot-csv-btn" class="btn btn-sm btn-export-csv" title="ส่งออกตารางสรุปเป็นไฟล์ CSV">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              ส่งออกสรุป CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive pivot-table-wrapper" tabindex="0">
+          <table id="pivot-table" class="data-table pivot-table">
+            <thead id="pivot-table-head">
+              <tr>
+                <th class="col-article-name">Article NO / หมวดหมู่พัสดุ</th>
+                <th class="col-total-qty">QTY</th>
+              </tr>
+            </thead>
+            <tbody id="pivot-table-body">
+              <!-- Dynamically populated tree rows -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- 3. Detail Data Table -->
-      <section class="card table-card">
+      <section class="card table-card" id="detail-table-card">
         <div class="table-card-header">
           <div class="table-title-group">
             <h2>ตารางแสดงรายละเอียดเฉพาะรายการ</h2>
             <span id="table-record-count-badge" class="counter-badge">0 รายการ</span>
+            <div id="drilldown-badge-container" class="drilldown-badge-wrapper hidden">
+              <span class="drilldown-tag">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                <span id="drilldown-label-text">เจาะจง: -</span>
+                <button type="button" id="clear-drilldown-btn" class="clear-drilldown-btn" title="ยกเลิกการเจาะจงข้อมูล">&times;</button>
+              </span>
+            </div>
           </div>
 
           <div class="table-actions">
