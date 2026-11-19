@@ -140,15 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showLoading(true, 'กำลังโหลดข้อมูลเข้าสู่แดชบอร์ด...');
 
     try {
-      // Priority 1: Check if user previously uploaded and saved a custom file in IndexedDB
-      const saved = await loadFromIndexedDB();
-      if (saved && saved.name && saved.headers && saved.rows && saved.rows.length > 0) {
-        applyParsedData(saved.headers, saved.rows, saved.name, true, saved.fileDate || 'บันทึกไว้ในเครื่อง');
-        showToast(`โหลดข้อมูลล่าสุดที่เคยบันทึกไว้ (${saved.name}) เรียบร้อย`);
-        return;
-      }
-
-      // Priority 2: Fetch latest ExportPWS.xlsx from Supabase Storage (High-Speed Singapore CDN, 0s delay)
+      // Priority 1 (Web): Always fetch the latest live data from Supabase Cloud Storage (0s Real-Time)
       if (window.location.protocol.startsWith('http')) {
         try {
           const supaRes = await fetch(`${SUPABASE_PUBLIC_URL}?_nocache=${Date.now()}`);
@@ -159,15 +151,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (lastMod) {
               const d = new Date(lastMod);
               if (!isNaN(d.getTime())) {
-                formattedMod = d.toLocaleString('th-TH');
+                formattedMod = d.toLocaleString('th-TH') + ' (Cloud Real-Time)';
               }
             }
             parseWorkbookBuffer(buf, 'ExportPWS.xlsx', false, formattedMod);
+            showToast('ดึงข้อมูลชุดล่าสุดจาก Cloud เรียบร้อยแล้ว');
             return;
           }
         } catch (supaErr) {
-          console.warn('Supabase fetch failed, falling back to repository file:', supaErr);
+          console.warn('Supabase fetch failed, falling back to local/default:', supaErr);
         }
+      }
+
+      // Priority 2: Check if user previously uploaded and saved a custom file in IndexedDB (for offline / fallback)
+      const saved = await loadFromIndexedDB();
+      if (saved && saved.name && saved.headers && saved.rows && saved.rows.length > 0) {
+        applyParsedData(saved.headers, saved.rows, saved.name, true, saved.fileDate || 'บันทึกไว้ในเครื่อง');
+        showToast(`โหลดข้อมูลล่าสุดที่เคยบันทึกไว้ (${saved.name}) เรียบร้อย`);
+        return;
       }
 
       // Priority 3: When on HTTP/HTTPS, try repository ExportPWS.xlsx with cache-busting
