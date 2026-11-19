@@ -8,6 +8,15 @@
  * 4. Executive Filters, 4 KPI Cards, 22 Yellow Columns Table with high-performance pagination
  */
 
+// ==========================================
+// Supabase Cloud Storage Configuration (Real-Time 0-second sync)
+// ==========================================
+const SUPABASE_PROJECT_URL = 'https://bdtplmqsmtdxqekfheof.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_mtdlPhRu-hxBjOXdYW7Oxw_meIhhf7d';
+const SUPABASE_BUCKET = 'pws-data';
+const SUPABASE_FILENAME = 'ExportPWS.xlsx';
+const SUPABASE_PUBLIC_URL = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${SUPABASE_FILENAME}`;
+
 document.addEventListener('DOMContentLoaded', () => {
   // 22 Yellow Columns from ExportPWS.xlsx
   const YELLOW_COLUMNS = [
@@ -125,14 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   initDashboard();
 
-  // ==========================================
-  // Supabase Cloud Storage Configuration (Real-Time 0-second sync)
-  // ==========================================
-  const SUPABASE_PROJECT_URL = 'https://bdtplmqsmtdxqekfheof.supabase.co';
-  const SUPABASE_ANON_KEY = 'sb_publishable_mtdlPhRu-hxBjOXdYW7Oxw_meIhhf7d';
-  const SUPABASE_BUCKET = 'pws-data';
-  const SUPABASE_FILENAME = 'ExportPWS.xlsx';
-  const SUPABASE_PUBLIC_URL = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${SUPABASE_FILENAME}`;
+
 
   async function initDashboard() {
     showLoading(true, 'กำลังโหลดข้อมูลเข้าสู่แดชบอร์ด...');
@@ -1880,7 +1882,6 @@ document.addEventListener('DOMContentLoaded', () => {
   function hideError() {
     errorAlert.classList.add('hidden');
   }
-});
 
 
   // ==========================================
@@ -1988,3 +1989,4 @@ document.addEventListener('DOMContentLoaded', () => {
     syncStatus.textContent = msg;
     syncStatus.classList.remove('hidden');
   }
+});
