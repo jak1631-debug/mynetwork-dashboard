@@ -52,7 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDispatchShortcut = document.getElementById('btn-dispatch-shortcut');
   const dispatchDaysInput = document.getElementById('dispatch-days-input');
   const quickGroupButtonsContainer = document.getElementById('quick-group-buttons');
+  const quickStoreButtonsContainer = document.getElementById('quick-store-buttons');
   let activeGroupPrefix = '';
+  let activeStoreGroup = ''; // '', 'HUB', 'RNO', 'KONG'
   const filterLocationCode = document.getElementById('filter-location-code');
   const clearLocationBtn = document.getElementById('clear-location-btn');
   const filterLocationType = document.getElementById('filter-location-type');
@@ -223,8 +225,9 @@ document.addEventListener('DOMContentLoaded', () => {
     filterLocationType.value = hasStoreOption ? 'STORE' : '';
 
     activeGroupPrefix = '';
-    activeGroupPrefix = '';
+    activeStoreGroup = '';
     updateGroupButtonStates();
+    updateStoreButtonStates();
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
@@ -509,6 +512,60 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function matchStoreGroup(locCode, storeGroup) {
+    if (!locCode || !storeGroup) return true;
+    const u = String(locCode).toUpperCase();
+    const isHub = u.includes('HUB');
+    const isKong = u.includes('-M-T-');
+    const isRno = /-[MI]-[A-Z]+-/i.test(u) && !isKong && !isHub;
+
+    if (storeGroup === 'HUB') return isHub;
+    if (storeGroup === 'RNO') return isRno;
+    if (storeGroup === 'KONG') return isKong;
+    return true;
+  }
+
+  function initQuickStoreButtons() {
+    if (!quickStoreButtonsContainer) return;
+    quickStoreButtonsContainer.querySelectorAll('.store-btn-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const storeType = btn.dataset.store || '';
+        if (activeStoreGroup === storeType) {
+          activeStoreGroup = ''; // toggle off back to all
+        } else {
+          activeStoreGroup = storeType;
+          // Ensure LOCATION_TYPE is STORE when filtering by a store group
+          if (filterLocationType) {
+            let hasStore = false;
+            for (let i = 0; i < filterLocationType.options.length; i++) {
+              if (filterLocationType.options[i].value.toUpperCase() === 'STORE') {
+                hasStore = true;
+                break;
+              }
+            }
+            if (hasStore) filterLocationType.value = 'STORE';
+          }
+        }
+        updateStoreButtonStates();
+        currentPage = 1;
+        activeDrilldown = null;
+        applyFilters();
+      });
+    });
+  }
+
+  function updateStoreButtonStates() {
+    if (!quickStoreButtonsContainer) return;
+    quickStoreButtonsContainer.querySelectorAll('.store-btn-chip').forEach((b) => {
+      const s = b.dataset.store || '';
+      if (s === activeStoreGroup) {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+    });
+  }
+
   function updateGroupButtonStates() {
     if (!quickGroupButtonsContainer) return;
     quickGroupButtonsContainer.querySelectorAll('.group-btn-chip').forEach((b) => {
@@ -596,6 +653,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetLocCode && locCodeIdx !== undefined) {
         const codeVal = String(row[locCodeIdx] || '').toLowerCase();
         if (!codeVal.includes(targetLocCode)) continue;
+      }
+
+      // 1.5 Quick Store Group Filter (HUB, RNO, กองงาน)
+      if (activeStoreGroup) {
+        if (locCodeIdx === undefined) continue;
+        const code = String(row[locCodeIdx] || '').trim();
+        if (!matchStoreGroup(code, activeStoreGroup)) continue;
       }
 
       // 2. LOCATION_TYPE
@@ -875,7 +939,9 @@ document.addEventListener('DOMContentLoaded', () => {
     filterLocationType.value = hasStoreOption ? 'STORE' : '';
 
     activeGroupPrefix = '';
+    activeStoreGroup = '';
     updateGroupButtonStates();
+    updateStoreButtonStates();
     if (filterGroupArticle) filterGroupArticle.value = '';
     filterArticleDesc.value = '';
     if (filterTitle) filterTitle.value = '';
@@ -1263,6 +1329,7 @@ document.addEventListener('DOMContentLoaded', () => {
     pivotTableBody.appendChild(fragment);
 
     attachPivotToggleListeners();
+  initQuickStoreButtons();
     updatePivotRowHighlights();
   }
 

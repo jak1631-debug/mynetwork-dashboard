@@ -121,17 +121,29 @@
       <!-- 1. Executive Filter Panel -->
       <section class="card filter-card">
         <div class="filter-header">
-          <!-- Quick Group Article Filter Buttons -->
-          <div class="quick-group-section">
-            <span class="quick-group-label">Article Group:</span>
-            <div id="quick-group-buttons" class="quick-group-buttons">
-              <button type="button" class="group-btn-chip active" data-prefix="">ทั้งหมด</button>
-              <button type="button" class="group-btn-chip" data-prefix="TRANSMISSION">Transmission</button>
-              <button type="button" class="group-btn-chip" data-prefix="Material">Material</button>
-              <button type="button" class="group-btn-chip" data-prefix="FACILITY">Facility</button>
-              <button type="button" class="group-btn-chip" data-prefix="Data Network Equipment">Data Network</button>
-              <button type="button" class="group-btn-chip" data-prefix="TOOLS&TEST_EQUIPMENT">Tools & Test</button>
-              <button type="button" class="group-btn-chip" data-prefix="IT Equipment">IT Equipment</button>
+          <div class="quick-filters-left">
+            <!-- Quick Group Article Filter Buttons -->
+            <div class="quick-group-section">
+              <span class="quick-group-label">Article Group:</span>
+              <div id="quick-group-buttons" class="quick-group-buttons">
+                <button type="button" class="group-btn-chip active" data-prefix="">ทั้งหมด</button>
+                <button type="button" class="group-btn-chip" data-prefix="TRANSMISSION">Transmission</button>
+                <button type="button" class="group-btn-chip" data-prefix="Material">Material</button>
+                <button type="button" class="group-btn-chip" data-prefix="FACILITY">Facility</button>
+                <button type="button" class="group-btn-chip" data-prefix="Data Network Equipment">Data Network</button>
+                <button type="button" class="group-btn-chip" data-prefix="TOOLS&TEST_EQUIPMENT">Tools & Test</button>
+                <button type="button" class="group-btn-chip" data-prefix="IT Equipment">IT Equipment</button>
+              </div>
+            </div>
+
+            <!-- Quick Store Group Filter Buttons (HUB, RNO, กองงาน) -->
+            <div class="quick-store-section">
+              <span class="quick-group-label">Store:</span>
+              <div id="quick-store-buttons" class="quick-group-buttons">
+                <button type="button" class="store-btn-chip" data-store="HUB" title="กรองเฉพาะสาขา HUB (มีข้อความ HUB ในชื่อ LOCATION_CODE)">HUB</button>
+                <button type="button" class="store-btn-chip" data-store="RNO" title="กรองเฉพาะสาขา RNO (มี -M-จังหวัด- หรือ -I-จังหวัด-)">RNO</button>
+                <button type="button" class="store-btn-chip" data-store="KONG" title="กรองเฉพาะสาขากองงาน (มี -M-T-จังหวัด)">กองงาน</button>
+              </div>
             </div>
           </div>
           <div class="filter-controls-right">
