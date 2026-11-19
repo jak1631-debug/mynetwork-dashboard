@@ -85,15 +85,23 @@
             <button id="reset-default-data-btn" class="btn-link hidden" title="กลับไปใช้ข้อมูล ExportPWS.xlsx เริ่มต้น">รีเซ็ตไฟล์เริ่มต้น</button>
           </div>
 
-          <!-- Prominent Update Button -->
-          <button id="update-file-btn" class="btn btn-update" title="เลือกไฟล์ ExportPWS.xlsx ตัวใหม่จากเครื่องเพื่ออัปเดตข้อมูล">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            <span>อัปเดตไฟล์ ExportPWS.xlsx</span>
-          </button>
+          <!-- Update & Team Sync Buttons -->
+          <div class="header-action-group">
+            <button id="update-file-btn" class="btn btn-update" title="เลือกไฟล์ ExportPWS.xlsx ตัวใหม่จากเครื่องเพื่ออัปเดตข้อมูล">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>อัปเดตไฟล์</span>
+            </button>
+            <button id="open-sync-modal-btn" class="btn btn-sync-cloud" title="ซิงค์ข้อมูลขึ้น GitHub ผ่าน Cloudflare Worker ให้ทุกคนในทีม">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+              </svg>
+              <span>ซิงค์เข้าทีม</span>
+            </button>
+          </div>
         </div>
       </div>
     </header>
@@ -383,6 +391,45 @@
       <p>Executive Inventory &amp; Asset Dashboard &bull; PWS Analytics &bull; SheetJS Engine</p>
     </footer>
   </div>
+
+
+    <!-- Supabase Cloud Sync Modal -->
+    <div id="sync-modal" class="modal-overlay hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-title">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+            </svg>
+            <h3>ซิงค์ข้อมูลเข้าทีม (Supabase Cloud Real-Time)</h3>
+          </div>
+          <button id="close-sync-modal-btn" class="modal-close-btn" title="ปิด">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            เมื่อกดส่ง ข้อมูลไฟล์ <strong>ExportPWS.xlsx</strong> จะถูกอัปโหลดขึ้น <strong>Supabase Cloud</strong> ทันที (0 วินาที ไม่ต้องรอ build) เพื่อนทุกคนในทีมที่เปิดหรือรีเฟรชหน้าเว็บจะได้รับข้อมูลชุดใหม่ล่าสุดทันที!
+          </p>
+
+          <div class="sync-info-banner">
+            <span class="sync-info-title">⚡ ระบบพร้อมใช้งาน (Auto-Configured)</span>
+            <span class="sync-info-sub">เชื่อมต่อกับ Bucket <code>pws-data</code> บน Supabase Singapore เรียบร้อยแล้ว</span>
+          </div>
+
+          <div id="sync-status" class="sync-status-box hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="cancel-sync-btn" class="btn btn-ghost">ยกเลิก</button>
+          <button id="confirm-sync-btn" class="btn btn-primary btn-sync-submit">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span id="confirm-sync-text">ส่งขึ้น Cloud เดี๋ยวนี้ (Real-Time 0 วิ)</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
   <script src="app.js"></script>
 </body>

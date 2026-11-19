@@ -125,6 +125,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   initDashboard();
 
+  // ==========================================
+  // Supabase Cloud Storage Configuration (Real-Time 0-second sync)
+  // ==========================================
+  const SUPABASE_PROJECT_URL = 'https://bdtplmqsmtdxqekfheof.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_mtdlPhRu-hxBjOXdYW7Oxw_meIhhf7d';
+  const SUPABASE_BUCKET = 'pws-data';
+  const SUPABASE_FILENAME = 'ExportPWS.xlsx';
+  const SUPABASE_PUBLIC_URL = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${SUPABASE_FILENAME}`;
+
   async function initDashboard() {
     showLoading(true, 'กำลังโหลดข้อมูลเข้าสู่แดชบอร์ด...');
 
@@ -137,19 +146,51 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Priority 2: Use embedded default data (data.js) - Works 100% on file:/// and web with 0 latency
+      // Priority 2: Fetch latest ExportPWS.xlsx from Supabase Storage (High-Speed Singapore CDN, 0s delay)
+      if (window.location.protocol.startsWith('http')) {
+        try {
+          const supaRes = await fetch(`${SUPABASE_PUBLIC_URL}?_nocache=${Date.now()}`);
+          if (supaRes.ok) {
+            const buf = await supaRes.arrayBuffer();
+            const lastMod = supaRes.headers.get('last-modified');
+            let formattedMod = 'ล่าสุดจาก Supabase Cloud';
+            if (lastMod) {
+              const d = new Date(lastMod);
+              if (!isNaN(d.getTime())) {
+                formattedMod = d.toLocaleString('th-TH');
+              }
+            }
+            parseWorkbookBuffer(buf, 'ExportPWS.xlsx', false, formattedMod);
+            return;
+          }
+        } catch (supaErr) {
+          console.warn('Supabase fetch failed, falling back to repository file:', supaErr);
+        }
+      }
+
+      // Priority 3: When on HTTP/HTTPS, try repository ExportPWS.xlsx with cache-busting
+      if (window.location.protocol.startsWith('http')) {
+        try {
+          await fetchDefaultFile(`ExportPWS.xlsx?_nocache=${Date.now()}`);
+          return;
+        } catch (fetchErr) {
+          console.warn('Network fetch of ExportPWS.xlsx failed, falling back to embedded data:', fetchErr);
+        }
+      }
+
+      // Priority 4: Use embedded default data (data.js) - Works 100% on file:/// and offline
       if (window.DEFAULT_PWS_DATA && window.DEFAULT_PWS_DATA.headers && window.DEFAULT_PWS_DATA.rows) {
         applyParsedData(window.DEFAULT_PWS_DATA.headers, window.DEFAULT_PWS_DATA.rows, 'ExportPWS.xlsx', false, '17/11/2026 21:34 น.');
         return;
       }
 
-      // Priority 3: Fetch ExportPWS.xlsx over HTTP (if hosted on web server / Netlify)
+      // Fallback
       await fetchDefaultFile('ExportPWS.xlsx');
 
     } catch (err) {
       console.warn('Dashboard init notice:', err);
       showLoading(false);
-      showError('ไม่สามารถโหลดข้อมูลอัตโนมัติได้ กรุณากดปุ่ม "อัปเดตไฟล์ ExportPWS.xlsx" ด้านบนขวา');
+      showError('ไม่สามารถโหลดข้อมูลอัตโนมัติได้ กรุณากดปุ่ม "อัปเดตไฟล์" ด้านบนขวา');
       if (errorActionBtn) {
         errorActionBtn.classList.remove('hidden');
         errorActionBtn.onclick = () => fileInput.click();
@@ -346,6 +387,8 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = async (e) => {
       try {
         const buffer = e.target.result;
+        lastUploadedRawBuffer = buffer;
+        lastUploadedFilename = file.name || 'ExportPWS.xlsx';
         const parsed = parseWorkbookBuffer(buffer, file.name, true, formattedDate);
 
         if (parsed && parsed.headers && parsed.rows) {
@@ -1838,3 +1881,110 @@ document.addEventListener('DOMContentLoaded', () => {
     errorAlert.classList.add('hidden');
   }
 });
+
+
+  // ==========================================
+  // Supabase Cloud Storage Sync Integration
+  // ==========================================
+
+  let lastUploadedRawBuffer = null;
+  let lastUploadedFilename = 'ExportPWS.xlsx';
+
+  const syncModal = document.getElementById('sync-modal');
+  const openSyncModalBtn = document.getElementById('open-sync-modal-btn');
+  const closeSyncModalBtn = document.getElementById('close-sync-modal-btn');
+  const cancelSyncBtn = document.getElementById('cancel-sync-btn');
+  const confirmSyncBtn = document.getElementById('confirm-sync-btn');
+  const confirmSyncText = document.getElementById('confirm-sync-text');
+  const syncStatus = document.getElementById('sync-status');
+
+  if (openSyncModalBtn) {
+    openSyncModalBtn.addEventListener('click', openSyncModal);
+  }
+  if (closeSyncModalBtn) {
+    closeSyncModalBtn.addEventListener('click', closeSyncModal);
+  }
+  if (cancelSyncBtn) {
+    cancelSyncBtn.addEventListener('click', closeSyncModal);
+  }
+
+  function openSyncModal() {
+    if (!syncModal) return;
+    if (syncStatus) {
+      syncStatus.className = 'sync-status-box hidden';
+      syncStatus.textContent = '';
+    }
+    syncModal.classList.remove('hidden');
+  }
+
+  function closeSyncModal() {
+    if (syncModal) syncModal.classList.add('hidden');
+  }
+
+  if (confirmSyncBtn) {
+    confirmSyncBtn.addEventListener('click', handleSyncToSupabase);
+  }
+
+  async function handleSyncToSupabase() {
+    let bufferToSend = lastUploadedRawBuffer;
+    if (!bufferToSend) {
+      showSyncStatus('กำลังเตรียมไฟล์ ExportPWS.xlsx สำหรับส่งขึ้น Cloud...', 'status-info');
+      try {
+        const res = await fetch('ExportPWS.xlsx');
+        if (!res.ok) throw new Error('ไม่พบไฟล์ ExportPWS.xlsx บนเซิร์ฟเวอร์');
+        bufferToSend = await res.arrayBuffer();
+      } catch (e) {
+        showSyncStatus('ไม่พบไฟล์ที่จะส่ง: กรุณากดปุ่ม "อัปเดตไฟล์" เพื่อเลือกไฟล์จากเครื่องก่อน', 'status-error');
+        return;
+      }
+    }
+
+    try {
+      showSyncStatus('กำลังอัปโหลดไฟล์ไปยัง Supabase Cloud Storage (Singapore)...', 'status-info');
+      confirmSyncBtn.disabled = true;
+      if (confirmSyncText) confirmSyncText.textContent = 'กำลังส่งข้อมูล...';
+
+      const uploadUrl = `${SUPABASE_PROJECT_URL}/storage/v1/object/${SUPABASE_BUCKET}/${SUPABASE_FILENAME}`;
+
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'x-upsert': 'true',
+        },
+        body: bufferToSend,
+      });
+
+      if (!response.ok) {
+        const resData = await response.json().catch(() => ({}));
+        let errMsg = resData.message || resData.error || `HTTP ${response.status}`;
+        if (errMsg.includes('row-level security') || errMsg.includes('AccessDenied')) {
+          errMsg = 'ยังไม่ได้เปิด Policy ใน Supabase: กรุณารัน SQL Allow Public Uploads ใน SQL Editor ของ Supabase';
+        }
+        throw new Error(errMsg);
+      }
+
+      const nowStr = new Date().toLocaleString('th-TH');
+      showSyncStatus(`✅ ส่งขึ้น Supabase สำเร็จแล้ว! (${nowStr}) ทุกคนที่เปิดหรือรีเฟรชหน้าเว็บจะเห็นข้อมูลใหม่ทันที`, 'status-success');
+      showToast('🎉 ซิงค์ไฟล์ขึ้น Supabase Cloud สำเร็จแล้ว! ทุกคนเห็นข้อมูลใหม่ทันที');
+
+      setTimeout(() => {
+        closeSyncModal();
+      }, 2500);
+
+    } catch (err) {
+      showSyncStatus(`❌ ข้อผิดพลาด: ${err.message}`, 'status-error');
+    } finally {
+      confirmSyncBtn.disabled = false;
+      if (confirmSyncText) confirmSyncText.textContent = 'ส่งขึ้น Cloud เดี๋ยวนี้ (Real-Time 0 วิ)';
+    }
+  }
+
+  function showSyncStatus(msg, typeClass) {
+    if (!syncStatus) return;
+    syncStatus.className = `sync-status-box ${typeClass}`;
+    syncStatus.textContent = msg;
+    syncStatus.classList.remove('hidden');
+  }
